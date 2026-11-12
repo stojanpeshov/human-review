@@ -111,6 +111,8 @@ def missing_model_work(review: Path) -> list[tuple[str, str]]:
     gone = []
     for rel, what in MODEL_OWNED.items():
         p = review / rel
+        if rel == "test-mapping.json" and (review / ".no-ticket").is_file():
+            continue                     # no ticket, so nothing to pair (rerun-model.py)
         legacy = MODEL_OWNED_LEGACY.get(rel)
         if not p.exists() and legacy and (review / legacy).is_file():
             continue

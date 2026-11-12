@@ -493,6 +493,11 @@ def generated_diagrams(ctx: "Ctx") -> list[str]:
     # serverless*.yml files.
     head = subprocess.run([sys.executable, str(HERE / "structure-diagrams.py"), "--out-dir",
                            str(out)], capture_output=True, text=True)
+    if head.returncode not in (0, 3):
+        # Said, not swallowed: a crash here used to leave the Structure tab one picture short
+        # with nothing anywhere saying why (a missing PyYAML, 12 Nov 2026).
+        ctx.notes.append("structure-diagrams.py failed — no Packages/Containers: "
+                         + (head.stderr.strip().splitlines() or ["?"])[-1][:200])
     if head.returncode == 0:
         subprocess.run([sys.executable, str(HERE / "structure-diagrams.py"), "--base", ctx.base,
                         "--out-dir", str(out), "--suffix", ".base"], capture_output=True, text=True)

@@ -189,7 +189,9 @@ def main(argv=None) -> int:
                      "assemble content.json and build the page"], capture=True, dry=dry)
         if not dry:
             (REVIEW / ".step-guide").write_text(guide.stdout, encoding="utf-8")
-        run([script("rerun-model.py")], dry=dry)
+        paired = run([script("rerun-model.py")], ok=(0, 4), dry=dry)
+        if paired.returncode == 4:
+            say("no ticket for this branch — the Tests tab has no matrix; the run goes on")
         run([script("write-content.py")], dry=dry)
         run([script("steps-ledger.py"), "end",
              (REVIEW / ".step-guide").read_text(encoding="utf-8").strip() if not dry else "N"],

@@ -12,10 +12,10 @@ one imports from another. Each box carries its folder (`<<src/core>>`), which is
 the page link it and shade it by the branch's share of the lines added in it.
 
 **Containers** (`Containers.puml`) — what the `serverless*.yml` files deploy and what drives
-it: one box per stack; inside it the HTTP API (its endpoint count) and every function a
-queue, topic, bus or schedule triggers; the SQS queues, SNS topics, EventBridge buses and
-DynamoDB tables the stacks declare, and the ones they import by name from another stack
-(`!ImportValue …-queue-arn`), outside every box; an arrow from each trigger to its
+it: for each stack (named under every box it deploys) the HTTP API (its endpoint count) and
+every function a queue, topic, bus or schedule triggers; the SQS queues, SNS topics,
+EventBridge buses and DynamoDB tables the stacks declare, and the ones they import by name
+from another stack (`!ImportValue …-queue-arn`); an arrow from each trigger to its
 function (a schedule's carries its rate), from a queue to its dead-letter queue, and from
 an EventBridge rule's bus to its target queue.
 
@@ -215,15 +215,18 @@ def containers(sls: dict[str, str]) -> str:
         stacks.append((service, path, http, fns, own))
     lines = list(HEADER)
     for service, path, http, fns, own in stacks:
-        lines.append(f'rectangle "{service}" as {alias("s", service)} {{')
+        # Flat, each box naming its stack: the differ marks an added line by colouring it,
+        # which PlantUML takes inside a class body and refuses inside a `rectangle { }` —
+        # a release that added one function drew no delta at all (12 Nov 2026).
+        stack = f"\\n<size:9>{service}</size>"
         if http:
-            lines.append(f'  component "HTTP API ({http} endpoints)" as {alias("api", service)}')
+            lines.append(f'component "HTTP API ({http} endpoints){stack}" as {alias("api", service)}')
         for name in sorted(fns):
-            lines.append(f'  component "{name}" as {alias("f", service, name)}')
+            lines.append(f'component "{name}{stack}" as {alias("f", service, name)}')
         for lid in sorted(own):
             t = own[lid]
-            lines.append(f'  {KIND_OF[t]} "{lid}\\n<size:9>{LABEL_OF[t]}</size>" as {alias("r", service, lid)}')
-        lines.append("}")
+            lines.append(f'{KIND_OF[t]} "{lid}\\n<size:9>{LABEL_OF[t]} · {service}</size>" '
+                         f'as {alias("r", service, lid)}')
     for a, (label, kind, what) in sorted(outside.items()):
         lines.append(f'{kind} "{label}\\n<size:9>{what}</size>" as {a}')
     lines.append("")

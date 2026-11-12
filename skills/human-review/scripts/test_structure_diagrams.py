@@ -81,11 +81,13 @@ resources:
 
 def test_containers_are_stacks_triggers_and_what_they_declare_or_import():
     text = sd.containers(SLS)
-    assert 'component "HTTP API (1 endpoints)" as api_things' in text
+    stack = "\\n<size:9>things</size>"
+    assert f'component "HTTP API (1 endpoints){stack}" as api_things' in text
     for fn in ("consume", "imported", "nightly"):
-        assert f'component "{fn}" as f_things_{fn}' in text
-    assert 'queue "ThingQueue\\n<size:9>SQS</size>" as r_things_ThingQueue' in text
-    assert 'database "Things\\n<size:9>DynamoDB</size>" as r_things_Things' in text
+        assert f'component "{fn}{stack}" as f_things_{fn}' in text
+    assert 'queue "ThingQueue\\n<size:9>SQS · things</size>" as r_things_ThingQueue' in text
+    assert 'database "Things\\n<size:9>DynamoDB · things</size>" as r_things_Things' in text
+    assert "{" not in text, "flat: an added box inside a group would not render"
     assert 'queue "things-form-queue\\n<size:9>SQS, imported</size>" as x_things_form_queue' in text
     edges = {l for l in text.splitlines() if "-->" in l}
     assert edges == {

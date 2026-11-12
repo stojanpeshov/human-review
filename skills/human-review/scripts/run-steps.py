@@ -2665,6 +2665,9 @@ STEPS = [
 NEEDS = {
     "aftermath": {"reviewpoints"},     # reads the review commit reviewpoints resolved
     "migrations": {"diagrams"},        # reads the DB diagram diagrams generated
+    # Both redraw assets/diagrams with puml-diff.sh (which empties it first); run together,
+    # their manifests interleaved and every generated diagram was listed twice.
+    "sequence":  {"diagrams"},
     "c2":        {"sequence"},         # projects the diagrams sequence drew
     "traces":    {"tests"},            # after the manifest; runs the browser suites itself
     "testcov":   {"traces"},           # reads the per-test coverage those suites dumped

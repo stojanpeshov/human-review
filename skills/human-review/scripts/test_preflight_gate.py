@@ -495,3 +495,12 @@ def test_a_configured_name_matches_the_circleci_job(tmp_path):
         {"id": 4, "context": "ci/circleci: lint", "state": "failure"}])
     p = _run(repo, env)
     assert p.returncode == 0, p.stderr
+
+
+def test_a_job_name_matches_whatever_environment_circleci_prefixes(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "human-review.json").write_text(json.dumps({"ci": {"workflows": ["Lint and Test"]}}))
+    env = _stub_status_gh(tmp_path, [
+        {"id": 2, "context": "ci/circleci: [TEST] Lint and Test", "state": "success"}])
+    p = _run(repo, env)
+    assert p.returncode == 0, p.stderr

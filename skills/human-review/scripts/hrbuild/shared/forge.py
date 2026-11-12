@@ -427,7 +427,13 @@ class GitHubForge:
         """A configured name matches a status by its whole context, or by the job after
         `ci/circleci: ` — so `"test"` names CircleCI's `ci/circleci: test`."""
         name = run.get("workflowName") or ""
-        return name == workflow or name.endswith(": " + workflow)
+        if name == workflow or name.endswith(": " + workflow):
+            return True
+        # CircleCI's job names carry the environment the branch deploys to — `[DEV] Lint and
+        # Test` on a feature branch, `[TEST] Lint and Test` on develop — so a configured
+        # `Lint and Test` names the job on every branch.
+        job = name.split(": ", 1)[-1]
+        return re.sub(r"^\[[^\]]*\]\s*", "", job) == workflow
 
     @staticmethod
     def ci_workflows() -> subprocess.CompletedProcess:

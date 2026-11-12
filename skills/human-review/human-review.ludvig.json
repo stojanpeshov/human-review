@@ -2,9 +2,9 @@
   "_comment": "human-review.json for a Ludvig Python/Serverless service (shaped on activities-backend). Copy it to the repository root as human-review.json and adjust. Every step not named here either needs nothing (logging, complexity, tests, owners) or is postponed in the Ludvig fork (video, city, dsaudit).",
   "base": "origin/develop",
   "ci": {
-    "_comment": "CircleCI reports to GitHub as commit statuses; name the jobs that prove the build. Never pushes unless push is true.",
+    "_comment": "CircleCI reports to GitHub as commit statuses; name the job that proves the build. `Lint and Test` matches `[DEV] Lint and Test` on a feature branch and `[TEST] Lint and Test` on develop. Never pushes unless push is true.",
     "workflows": [
-      "[DEV] Lint and Test"
+      "Lint and Test"
     ],
     "push": false
   },

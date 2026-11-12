@@ -105,36 +105,10 @@ REPOSITORY = """interface VetRepository {
 }""".splitlines()
 
 
-def test_an_annotation_stands_in_for_its_methods_body():
-    got = tc.classify("app/VetRestController.java", CONTROLLER, [4], {6}, lambda n: {})
-    assert got == [{"file": "app/VetRestController.java", "lines": [4],
-                    "reason": "annotation — runs as its method runs",
-                    "proxy": {"app/VetRestController.java": [6]}}]
 
 
-def test_a_method_signature_folds_into_its_body():
-    got = tc.classify("app/VetRestController.java", CONTROLLER, [5], {6}, lambda n: {})
-    assert got[0]["reason"] == tc.SIGNATURE
-    tests = [{"hits": {"app/VetRestController.java": [6]}}, {"hits": {}}]
-    ex = {"app/VetRestController.java": {6}}
-    tc.fold_signature(got[0], ex, tests)
-    assert ex["app/VetRestController.java"] == {5, 6}
-    assert tests[0]["hits"]["app/VetRestController.java"] == [5, 6]
-    assert tests[1]["hits"] == {}
 
 
-def test_a_repository_query_stands_in_as_its_call_sites():
-    asked = []
-
-    def callers(name):
-        asked.append(name)
-        return {"app/OwnerRestController.java": [209]}
-    got = tc.classify("app/VetRepository.java", REPOSITORY, [2, 3, 5], set(), callers)
-    assert asked and set(asked) == {"findByIdWithoutSpecialties"}
-    assert len(got) == 1
-    assert got[0]["lines"] == [2, 3, 5]
-    assert got[0]["proxy"] == {"app/OwnerRestController.java": [209]}
-    assert "called" in got[0]["reason"]
 
 
 def test_a_field_has_no_proxy_and_sql_has_no_probe():
@@ -146,10 +120,6 @@ def test_a_field_has_no_proxy_and_sql_has_no_probe():
                     "reason": "SQL — runs inside the database, where no probe looks"}]
 
 
-def test_a_line_only_a_constructor_runs_is_said_to_be_one():
-    got = tc.classify("app/VetRestController.java", CONTROLLER, [2], {6}, lambda n: {},
-                      init={2})
-    assert got[0]["reason"].startswith("runs while the object is built")
 
 
 def test_the_repo_finds_a_source_by_its_package_suffix(tmp_path, monkeypatch):
@@ -471,3 +441,112 @@ def test_the_traces_step_takes_the_same_lock(tmp_path, monkeypatch):
     # flock is per open file description: a second open in the same process conflicts.
     rs._traces(rs.Ctx("main", {}, False))
     assert seen == ["held"]
+
+
+# ---------------------------------------------------------------- pytest (the Ludvig fork)
+
+def _py_project(tmp_path):
+    """A tiny service and its tests in a real git repo: a changed function, a changed
+    signature, a module-level constant and a docstring."""
+    import subprocess
+    root = tmp_path / "svc"
+    (root / "src").mkdir(parents=True)
+    (root / "tests").mkdir()
+    (root / "src" / "__init__.py").write_text("")
+    (root / "tests" / "__init__.py").write_text("")
+    run = lambda *a: subprocess.run(["git", *a], cwd=root, check=True, capture_output=True)
+    run("init", "-q")
+    run("config", "user.email", "t@t")
+    run("config", "user.name", "t")
+    (root / "src" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    (root / "tests" / "test_calc.py").write_text(
+        "import pytest\nfrom src.calc import add, Box\n\n\n"
+        "def test_add():\n    assert add(1, 2) == 3\n\n\n"
+        "class TestBox:\n    @pytest.mark.parametrize('n', [1, 2])\n"
+        "    def test_size(self, n):\n        assert Box().size() == 0\n\n\n"
+        "def test_fails():\n    assert add(1, 1) == 3\n")
+    run("add", "-A")
+    run("commit", "-qm", "base")
+    run("tag", "base")
+    (root / "src" / "calc.py").write_text(
+        "LIMIT = 10\n\n\ndef add(a, b,\n        c=0):\n    \"\"\"Sum.\"\"\"\n    return a + b + c\n\n\n"
+        "class Box:\n    def size(self):\n        return 0\n")
+    run("commit", "-qam", "change")
+    return root
+
+
+def test_a_pytest_suite_is_measured_per_test_and_joined_to_the_change(tmp_path, monkeypatch):
+    root = _py_project(tmp_path)
+    (root / "human-review.json").write_text(json.dumps({"steps": {"testcov": {
+        "sources": ["src/**"],
+        "pytest": [{"label": "pytest", "python": sys.executable, "args": "-q -p no:cacheprovider"}],
+    }}}))
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(tc, "WORK", Path(".human-review/coverage"))
+    assert tc.main(["--base", "base", "--out", ".human-review/assets/test-coverage.json"]) == 0
+    doc = json.loads((root / ".human-review/assets/test-coverage.json").read_text())
+    assert doc["changed"] == {"src/calc.py": [1, 4, 5, 6, 7, 10, 11, 12]}
+    rows = {t["id"]: t for t in doc["tests"]}
+    assert set(rows) == {"tests/test_calc.py::test_add", "tests/test_calc.py::TestBox::test_size[1]",
+                         "tests/test_calc.py::TestBox::test_size[2]", "tests/test_calc.py::test_fails"}
+    add = rows["tests/test_calc.py::test_add"]
+    assert (add["status"], add["source"], add["line"]) == ("passed", "pytest", 5)
+    # The body ran under the test, and the changed header — signature and docstring — is
+    # charged to it with it.
+    assert add["hits"]["src/calc.py"] == [4, 5, 6, 7]
+    assert rows["tests/test_calc.py::test_fails"]["status"] == "failed"
+    assert rows["tests/test_calc.py::TestBox::test_size[1]"]["hits"]["src/calc.py"] == [11, 12]
+    why = {g["reason"]: g["lines"] for g in doc["unmeasurable"]}
+    assert why == {tc.IMPORT_TIME: [1, 10]}
+    [suite] = doc["suites"]
+    assert (suite["source"], suite["status"], suite["tests"]) == ("pytest", "ran", 4)
+    assert "1 failed" in suite["note"]
+
+
+def test_a_python_header_line_runs_as_its_body_runs():
+    src = ["@cache", "def f(a,", "      b):", '    """doc."""', "    return a"]
+    assert tc.python_owners(src) == {1: 5, 2: 5, 3: 5, 4: 5}
+
+
+# ---------------------------------------------------------------- vitest (the Ludvig fork)
+
+def test_a_vitest_run_s_per_test_dumps_become_rows_joined_through_the_source_maps(
+        tmp_path, monkeypatch):
+    """What `vitest-percov.mjs` leaves (one JSON per test) and what `v8-join.js` makes of it
+    (lines per test, through the inline source maps) become the Tests tab's rows."""
+    import subprocess as sp
+    root = tmp_path / "repo"
+    (root / "frontend").mkdir(parents=True)
+    out = tmp_path / "work" / "vitest-0"
+    out.mkdir(parents=True)
+    (out / "1-1.json").write_text(json.dumps({
+        "id": "src/a.test.tsx::Card > renders", "title": "renders",
+        "file": "src/a.test.tsx", "line": 7, "status": "passed", "v8": []}))
+    monkeypatch.setattr(tc, "WORK", tmp_path / "work")
+    joined = {"executable": {"frontend/src/a.tsx": [1, 2, 3]},
+              "tests": {"1-1.json": {"frontend/src/a.tsx": [2, 3]}}}
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return sp.CompletedProcess(cmd, 0, json.dumps(joined), "")
+    monkeypatch.setattr(tc.subprocess, "run", fake_run)
+    repo = tc.Repo.__new__(tc.Repo)
+    repo.root = root
+    tests, suites, executable = tc.vitest_suites(
+        [{"label": "Vitest", "cwd": "frontend"}], repo, reuse=True)
+    assert seen[0][1].endswith("v8-join.js") and seen[0][3] == "frontend"
+    assert tests == [{"id": "Vitest:src/a.test.tsx::Card > renders", "suite": "Vitest",
+                      "title": "renders", "file": "frontend/src/a.test.tsx", "line": 7,
+                      "status": "passed", "source": "vitest",
+                      "hits": {"frontend/src/a.tsx": [2, 3]}}]
+    assert executable == {"frontend/src/a.tsx": {1, 2, 3}}
+    assert suites[0]["status"] == "ran" and suites[0]["tests"] == 1
+
+
+def test_the_vitest_wrapper_keeps_the_project_s_setup_files_and_adds_the_hook():
+    text = tc.VITEST_WRAPPER.format(config='"/r/fe/vite.config.ts"', root='"/r/fe"',
+                                    setup='"/r/fe/node_modules/.cache/hr/vitest-percov.mjs"')
+    assert 'import base from "/r/fe/vite.config.ts";' in text
+    assert 'root: "/r/fe"' in text and "concurrent: false" in text
+    assert "f.replace(/^\\.\\//, '')" in text

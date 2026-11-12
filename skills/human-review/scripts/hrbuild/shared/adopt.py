@@ -70,11 +70,14 @@ PIECES: dict[str, tuple[str, str]] = {
         "DomainModelExtractorTest.java, " + PETCLINIC + "src/test/java/victor/training/"
         "petclinic/guardrail/DomainModelExtractor.java, scripts/puml-diff.sh, "
         "puml-diff/puml_diff.py"),
+    "migrations": (
+        "the Alembic migrations card: each new revision's operations, flagged where risky",
+        "scripts/alembic-review.py"),
     "diagram.db": (
-        "the ERD generated from your DB migration scripts, committed as PlantUML and "
+        "the ER diagram written from the SQLAlchemy models at the merge-base and on the branch, "
         "diffed base against branch",
-        PETCLINIC + "docs/scripts/db/db_schema_to_puml.py, scripts/puml-diff.sh, "
-        "puml-diff/puml_diff.py, scripts/hrbuild/shared/diagrams.py"),
+        "scripts/sqlalchemy-erd.py, scripts/puml-diff.sh, puml-diff/puml_diff.py, "
+        "scripts/hrbuild/shared/diagrams.py"),
     "diagram.drawio": (
         "the hand-drawn draw.io {title} diagram, checked against the code by a test and "
         "diffed base against branch",
@@ -82,10 +85,13 @@ PIECES: dict[str, tuple[str, str]] = {
         "ConceptualModelDiagramTest.java, " + PETCLINIC + "src/test/java/victor/training/"
         "petclinic/guardrail/DeploymentDiagramTest.java, " + PETCLINIC + "src/test/java/"
         "victor/training/petclinic/guardrail/DrawioDiagram.java, scripts/drawio-diff.py"),
+    "diagram.containers": (
+        "the container view written from serverless*.yml — stacks, triggers, queues, tables — "
+        "diffed base against branch",
+        "scripts/structure-diagrams.py, scripts/puml-diff.sh, puml-diff/puml_diff.py"),
     "diagram.packages": (
-        "the package diagram, kept as PlantUML, enforced on the code by ArchUnit and "
-        "diffed base against branch", PETCLINIC + "src/test/java/victor/training/petclinic/"
-        "guardrail/PackagesArchTest.java, scripts/puml-diff.sh, puml-diff/puml_diff.py"),
+        "the package diagram written from the Python imports, diffed base against branch",
+        "scripts/structure-diagrams.py, scripts/puml-diff.sh, puml-diff/puml_diff.py"),
     "diagram.frontend": (
         "the frontend's folders and who imports whom, kept as PlantUML, enforced on the "
         "code by a node:test that reads every import, and diffed base against branch",
@@ -231,16 +237,16 @@ EXPLAIN: dict[str, dict[str, object]] = {
     },
     'api': {
         "li": [
-            'The OpenAPI contract, main vs this branch, by oasdiff; <b>breaking</b>: a client can fail.',
-            '<b>Generated from code</b>: a test writes the spec from the controllers.',
+            'The OpenAPI contract, develop vs this branch, by oasdiff; <b>breaking</b>: a client can fail.',
+            '<b>Derived from code</b>: serverless.yml routes, plus what each handler reads and returns.',
             '<b>Diagram</b>: a body as classes, entered by an arrow; green added, red struck removed.',
             'One DTO change breaks many endpoints: for each, ask who calls it and if they were updated.',
             '<b>→</b> request, <b>←</b> response; a red row is what breaks a client, no badge: nothing.',
             '<b>changes: expand</b> opens what changed; only a field with fields inside has a <b>▶</b>.',
         ],
         "code": (
-            '<span class="c">e.g. GET /api/owners/1</span>\n'
-            '<span class="c">main:  </span>{ "name": "Leo" }\n'
+            '<span class="c">e.g. POST /customers/{org_number}/things</span>\n'
+            '<span class="c">develop:</span>{ "name": "Leo" }\n'
             '<span class="c">branch:</span>{ "firstName": "Leo" }   <span class="p">breaking</span>'
         ),
     },
@@ -254,9 +260,18 @@ EXPLAIN: dict[str, dict[str, object]] = {
         ],
         "ex": 'e.g. <code>Owner 1─* Pet 1─* Visit</code>',
     },
+    'migrations': {
+        "li": [
+            'Each migration the branch adds, and every op its upgrade() makes, linked to its line.',
+            '<b>destructive</b>: a drop a deploy cannot take back.',
+            '<b>fails on rows</b>: NOT NULL with no server_default, on a table that has data.',
+            '<b>raw SQL</b>: op.execute, which the ER diagram above cannot show.',
+            'Red band: models changed with no migration, an edited old migration, or two heads.',
+        ],
+    },
     'diagram.db': {
         "li": [
-            'The real tables: the migrations run on an empty DB, then read back.',
+            'The mapped tables, read off the SQLAlchemy models at the base and on this branch.',
             'Green = added by this PR.',
             'Look for a new FK without an index, or NOT NULL on a table that has rows.',
             '<b>✓ Generated from …</b> beside <b>changed</b>: its source; click for the generator.',
@@ -283,15 +298,22 @@ EXPLAIN: dict[str, dict[str, object]] = {
     },
     'diagram.packages': {
         "li": [
-            'The packages and their dependencies.',
-            '<a href="https://www.archunit.org/" target="_blank" rel="noopener noreferrer">'
-            'ArchUnit</a>, a test library, fails the build on an import the drawing lacks.',
+            'The service&#39;s Python packages, one level under each root, and who imports whom.',
+            'Written from the imports at the base and on this branch, then diffed.',
             'A new arrow is new coupling: ask why.',
-            '<b>Blue fill</b> = a box\'s share of the lines added; hover it for the changed files.',
+            '<b>Blue fill</b> = a box&#39;s share of the lines added; hover it for the changed files.',
             '<b>Dimmed box</b>: nothing in it changed; <b>Impacted</b> hides those and their arrows.',
-            '<b>✓ ArchUnit-tested vs code</b> after the title: click it to open that test.',
         ],
-        "ex": 'e.g. <code>..domain</code> → <code>..rest</code>: not drawn, so a test fails.',
+        "ex": 'e.g. <code>src.domain</code> → <code>src.handlers</code>: the domain reaching up.',
+    },
+    'diagram.containers': {
+        "li": [
+            'What serverless*.yml deploys: a box per stack, its functions, queues, buses, tables.',
+            'An arrow is a trigger: a queue, bus or schedule (with its rate) into a function.',
+            'Outside every box: what a stack imports from another stack, or AWS&#39;s own.',
+            'A new queue, trigger or DLQ is new infrastructure: check alarms and IAM came with it.',
+        ],
+        "ex": 'e.g. <code>RpaIntegrationQueue</code> → <code>rpaIntegration</code>, and its DLQ.',
     },
     'diagram.frontend': {
         "li": [
@@ -349,19 +371,15 @@ EXPLAIN: dict[str, dict[str, object]] = {
     'sequence': {
         "move": 'details.seqhow',
         "li": [
-            'One per tagged or touched test: HTTP, SQL, cross-module calls; '
-            '<b>tx</b>: committed/rolled back.',
-            '<b>New</b>/<b>Old</b>: this branch\'s run, or the base\'s; <b>⇒ .puml</b>: the file the test writes.',
-            'Hover <b>⊕</b> for the SQL, JSON or request, click to keep it; <b>values</b> fills in each <b>?</b>.',
-            'A request\'s Bruno dog opens it in Bruno; off the server it copies it as cURL instead.',
-            'A blue call opens its method; a browser request opens the line that sent it, in that run.',
-            'Dot before the file name: the DB fixture the test starts on; grey = Default; none = empty.',
+            'One per test this branch wrote or edited, or marked <code>genseq</code>: what it called.',
+            'A lifeline per class of the service; Test drives; ×N folds a run of the same call.',
+            'Thin arrows leave the service: AWS (each boto3 call), DB (each SQL), HTTP.',
+            '<b>New</b>/<b>Old</b>: this branch&#39;s run, or the base&#39;s; <b>⇒ .puml</b>: the drawing.',
+            'Look for a call the change did not need, or a query inside a loop.',
         ],
-        "code": (
-            'GET /api/owners\n'
-            '  → OwnerRepository.findByLastNameStartingWith\n'
-            '  → select pets, select visits   <span class="p">per owner ← N+1</span>'
-        ),
+        "code": ('Test → caching : sqs_handler()\n'
+                 '  caching → events : parse_domain_event() ×4\n'
+                 '  caching ⇢ DB : SELECT activities   <span class="p">once per event?</span>'),
     },
     'city': {
         "li": [
@@ -384,7 +402,7 @@ EXPLAIN: dict[str, dict[str, object]] = {
     'complexity': {
         "move": 'p.cx-lede',
         "li": [
-            'Cognitive complexity per endpoint: its whole call graph, walked and summed.',
+            'Cognitive complexity per entry point (API, queue, schedule): its call graph, summed.',
             'Nesting is what costs: each level adds one.',
             'Green = added by this PR; hover a number for what it counts.',
             'Watch the + per endpoint, not the total.',
@@ -392,9 +410,9 @@ EXPLAIN: dict[str, dict[str, object]] = {
             'Click a path, class or method name to open it; click the rest to unfold.',
         ],
         "code": (
-            'for (Owner o : owners) {            <span class="p">// +1</span>\n'
-            '  if (o.getPets().isEmpty()) {      <span class="p">// +2  nested once</span>\n'
-            '    for (Visit v : visits) {}       <span class="p">// +3  nested twice</span>'
+            'for owner in owners:            <span class="p"># +1</span>\n'
+            '    if not owner.pets:          <span class="p"># +2  nested once</span>\n'
+            '        for visit in visits:    <span class="p"># +3  nested twice</span>'
         ),
     },
     'logging': {
@@ -402,12 +420,13 @@ EXPLAIN: dict[str, dict[str, object]] = {
         "li": [
             'Every log line this PR adds or changes.',
             'The file name in each box opens that line in VS Code.',
-            'Check: right level?',
-            'No personal data?',
-            'Enough context to debug?',
+            '⚠ chips: personal data, a payload logged whole, an org number, an f-string message.',
+            'Hover a ⚠ chip for the line of Ludvig&#39;s logging standard it is about.',
+            'Check the level: exceptions at ERROR, never a 4xx.',
+            'Enough context to debug, in <code>extra=</code>?',
         ],
         "code": (
-            '<span class="c">e.g. ✗</span> log.info("Saved {}", owner);  <span class="p">// phone, address</span>'
+            '<span class="c">e.g. ✗</span> logger.info("Saved", extra={"payload": payload})  <span class="p"># every field</span>'
         ),
     },
     'owners': {
@@ -436,6 +455,7 @@ DIAGRAM_KINDS = (
     ("diagram.drawio", re.compile(r"\.drawio\b", re.I)),
     ("diagram.domain", re.compile(r"domain\s*model", re.I)),
     ("diagram.db", re.compile(r"\bDB\b|\bERD\b|\bschema\b", re.I)),
+    ("diagram.containers", re.compile(r"\bContainers\b")),
     ("diagram.c2", re.compile(r"\bC2\b", re.I)),
     ("diagram.frontend", re.compile(r"\bfrontend\b", re.I)),
     ("diagram.modules", re.compile(r"modules?\b", re.I)),  # also MavenModules.puml, any title
@@ -461,7 +481,8 @@ PLACES: dict[str, tuple[tuple[str | None, str, str | None, str | None], ...]] = 
     "review": (("review", "row", r'<p class="sub counts pilelede', "first"),),
     "behaviour": (("behaviour", "col", r'<ol class="transcript"', "first"),),
     "api": (("api", "title", r'<div class="apiverdict\b', "first"),),
-    "data": ((None, "in", DIAGRAM_CARD, "all"),),
+    "data": ((None, "in", DIAGRAM_CARD, "all"),
+             ("migrations", "title", r'<h3 class="mg-title"', "first")),
     "packages": ((None, "in", DIAGRAM_CARD, "all"),),
     "requirements": (("requirements", "title", r'<p class="rm-cats"', "first"),),
     "sequence": (("sequence", "title", r'<h2 class="tabtitle\b', "first"),),
@@ -520,9 +541,10 @@ def adopt_prompt(piece: str, title: str = "") -> str | None:
     starts = ", ".join(s if s.startswith("http") else f"skills/human-review/{s}"
                        for s in start.split(", "))
     return (f"Get {what} into this repository — one piece of the review page of "
-            f"{HOME_URL} (branch main). Start from {starts}, and what they import. "
-            "They were written for a Java/Spring + Angular project: port the idea and "
-            "rewrite what only fits that stack. Take only that piece. Run it on the "
+            f"{HOME_URL} (branch ludvig). Start from {starts}, and what they import. "
+            "They were written for Ludvig's Python services on AWS Lambda (Serverless "
+            "Framework, SQLAlchemy, Alembic, pytest): port the idea and rewrite what only "
+            "fits that stack. Take only that piece. Run it on the "
             "current branch against its merge-base with this repository's trunk, and "
             "show me the result — if the branch does not touch what this piece shows, say "
             "so and show it on a recent commit that does. Leave the changes uncommitted.")

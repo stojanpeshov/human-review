@@ -18,12 +18,23 @@
 - **Diff + extra neighbours: 0 · 1 · 2 · all** — widen the radius around the change until it
   is legible in context.
 - **Diff / New/Old** — flip to the whole diagram before and after.
+- **Migrations** (Alembic): every revision the branch adds, its `upgrade()` one operation per
+  line, linked to the line — flagged *destructive* (a drop), *fails on rows* (NOT NULL with no
+  `server_default`), *raw SQL* (`op.execute`) or *no downgrade*; and a red band when the
+  models changed with no migration, an existing migration was edited, or the history now
+  has two heads.
 - A hand-drawn `.drawio.png` conceptual model, if the project keeps one, diffed by the
   identity of each box rather than by pixels.
 
 ## What it needs
 
-- `plantuml`, and the `.puml` diagrams your project already generates and commits.
+- `plantuml` (a Java runtime; without Graphviz it lays out with its built-in Smetana engine).
+- For a Python service, nothing else: the **DB** diagram is written by
+  [`sqlalchemy-erd.py`](../../skills/human-review/scripts/sqlalchemy-erd.py) from the
+  SQLAlchemy models — every `__tablename__` class and `Table(...)`, its columns, primary and
+  foreign keys, nullability — at the merge-base and on the branch, and the two go through the
+  same differ as a committed diagram. A schema the branch did not touch is drawn as context.
+- Any `.puml` diagram the project commits is diffed as well.
 
 ## Deeper
 

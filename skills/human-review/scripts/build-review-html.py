@@ -226,7 +226,7 @@ from hrbuild.shared.postprocess import (
     ANCHOR, check_baked_excerpts, one_tooltip_only, open_links_in_new_tabs, TARGET_ATTR
 )
 from hrbuild.shared.validate import (
-    REQUIRED, validate
+    REQUIRED, STEPS_STATUS, drop_unproduced, validate
 )
 from hrbuild.shared.layout import (
     _layout_overridden, _layout_section, _video_step_ran, LAYOUT_ALWAYS, LAYOUT_MODEL_KEYS, LAYOUT_PRODUCER,
@@ -320,7 +320,7 @@ from hrbuild.tabs.tests import (
     COV_NOT_MEASURED, load_coverage, coverage_join, model_pairing, coverage_side, _model_key,
     TEMPLATE_UNSEEN, _rendered_templates,
     _cov_ranges, _snippet_module, COV_PART_MAX, _GHERKIN_NEXT, _cov_part,
-    _API_MARKERS, _cov_cat, coverage_tests, coverage_after, _load_test_changes, suite_chips
+    _API_MARKERS, _E2E_DIR, _cov_cat, coverage_tests, coverage_after, _load_test_changes, suite_chips
 )
 from hrbuild.tabs.demo import (
     VOICE_TIPS, voice_films, voice_switch, embed_html, VERDICT_FACE, video_html, VIDEO_VERDICT,
@@ -333,7 +333,7 @@ from hrbuild.tabs.city import (
 from hrbuild.tabs.logging import (
     LOGEXTRACT, logging_fragment, logging_libraries, logging_libraries_tip,
     MAX_ORIGIN_LINES_SHOWN, SRCREF_HREF, type_hint_html, _aim_at_statement, _hint_arguments,
-    _CHAR, _insert_at, _LOG_PKGS_RE, _logextract, _logging_aside, _logging_listing,
+    _CHAR, _CONCERN, _concerns_line, _insert_at, _LOG_PKGS_RE, _logextract, _logging_aside, _logging_listing,
     _logging_ref, _plain, _PRE, _ROW, _TAG_SPLIT, _change_line, _mark_rewritten, _ADDED_ROW,
     _inlay_file
 )
@@ -460,6 +460,9 @@ def _main(argv=None) -> int:
     # and named — the same treatment an unanchored assumption gets further down.
     for warning in own_layout(spec, out_dir):
         print(f"[review] WARNING: {warning}", file=sys.stderr)
+
+    for gone in drop_unproduced(spec, out_dir):
+        print(f"[review] dropped {gone} — this run's producers did not write it", file=sys.stderr)
 
     problems = validate(spec, out_dir)
     if problems:

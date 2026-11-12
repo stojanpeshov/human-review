@@ -146,11 +146,18 @@ def have(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
-def has_java() -> bool:
-    """Whether this project has Java main sources — asked of the index, not of the disk,
-    so `node_modules` and a build's output cost nothing to walk past."""
-    listed = subprocess.run(["git", "ls-files", "*/src/main/java/*.java", "src/main/java/*.java"],
-                            capture_output=True, text=True)
+def has_alembic() -> bool:
+    """Whether the repository tracks Alembic revisions (`…/alembic/versions/*.py`)."""
+    listed = subprocess.run(["git", "ls-files", "*/alembic/versions/*.py", "alembic/versions/*.py",
+                             "*/migrations/versions/*.py"], capture_output=True, text=True)
+    return bool(listed.stdout.strip())
+
+
+def has_serverless() -> bool:
+    """Whether this service deploys with the Serverless Framework — a `serverless*.yml` at
+    the root names its functions, and so its entry points. Asked of the index."""
+    listed = subprocess.run(["git", "ls-files", "serverless.yml", "serverless.*.yml",
+                             "serverless.yaml"], capture_output=True, text=True)
     return bool(listed.stdout.strip())
 
 
@@ -462,11 +469,51 @@ def _aftermath(ctx: Ctx):
                          "generated files only — the band is grey, which is correct")
 
 
+#: Diagrams a step generates for both sides, fed to puml-diff.sh beside the committed
+#: ones (`PUML_GENERATED`): `<name>.puml` for the branch, `<name>.base.puml` for the base.
+GENERATED_PUML = ".human-review/generated-puml"
+
+
+def generated_diagrams(ctx: "Ctx") -> list[str]:
+    """The `DB` ER diagram, from the SQLAlchemy models, at the merge-base and now — the
+    Data tab's `DB` delta for a service that commits no diagram. Names what it wrote."""
+    out = Path(GENERATED_PUML)
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True, exist_ok=True)
+    made = []
+    head = subprocess.run([sys.executable, str(HERE / "sqlalchemy-erd.py"), "--out",
+                           str(out / "DB.puml")], capture_output=True, text=True)
+    if head.returncode == 0:
+        subprocess.run([sys.executable, str(HERE / "sqlalchemy-erd.py"), "--base", ctx.base,
+                        "--out", str(out / "DB.base.puml")], capture_output=True, text=True)
+        made.append("DB (from the SQLAlchemy models)")
+    else:
+        (out / "DB.puml").unlink(missing_ok=True)
+    # The Structure tab's Packages and Containers, from the Python imports and the
+    # serverless*.yml files.
+    head = subprocess.run([sys.executable, str(HERE / "structure-diagrams.py"), "--out-dir",
+                           str(out)], capture_output=True, text=True)
+    if head.returncode == 0:
+        subprocess.run([sys.executable, str(HERE / "structure-diagrams.py"), "--base", ctx.base,
+                        "--out-dir", str(out), "--suffix", ".base"], capture_output=True, text=True)
+        made += [n for n in ("Packages (from the imports)", "Containers (from serverless*.yml)")
+                 if (out / f"{n.split()[0]}.puml").is_file()]
+    return made
+
+
+def _migrations(ctx: Ctx):
+    sh(f"{HERE}/alembic-review.py --base {ctx.base} --out {ART}/migrations.html", ctx)
+
+
 def _diagrams(ctx: Ctx):
-    sh(f"{HERE}/puml-diff.sh {ctx.base} {ART}/diagrams", ctx)
+    made = generated_diagrams(ctx)
+    sh(f"PUML_GENERATED={GENERATED_PUML} {HERE}/puml-diff.sh {ctx.base} {ART}/diagrams", ctx)
+    if made:
+        ctx.notes.append("generated for both sides: " + ", ".join(made))
     d = ctx.step_cfg("diagrams").get("drawio")
     if not d:
-        ctx.notes.append("no drawio diagram configured")
+        if not made:
+            ctx.notes.append("no drawio diagram configured")
         return
     # `redraw` is the repository's own patch script — the thing that draws what the code
     # has and the map lacks, in red, as a to-do. Passed through rather than guessed: the
@@ -583,7 +630,9 @@ def _sequence(ctx: Ctx):
     if gone:
         ctx.notes.append(f"restored {len(gone)} diagram file(s) a failed suite deleted "
                          "without regenerating; say in the guide that the suite could not run")
-    sh(f"{HERE}/puml-diff.sh {ctx.base} {ART}/diagrams", ctx)
+    # With the generated pairs the diagrams step left, or the delta it redraws here would
+    # lose the DB, Packages and Containers rows the Data and Structure tabs read.
+    sh(f"PUML_GENERATED={GENERATED_PUML} {HERE}/puml-diff.sh {ctx.base} {ART}/diagrams", ctx)
     if ctx.dry:
         return
     lost = lost_vs_committed(kept)
@@ -848,7 +897,11 @@ def _run_traced(ctx: Ctx, cfg: dict, commands, runs: list[dict],
         scratch = Path(tempfile.gettempdir()) / ("hr-sequence-report-" + hashlib.sha1(
             str(Path.cwd()).encode()).hexdigest()[:10])
         own_report = (f"export PLAYWRIGHT_HTML_OUTPUT_DIR={shlex.quote(str(scratch))} "
-                      "PLAYWRIGHT_HTML_OPEN=never; ")
+                      "PLAYWRIGHT_HTML_OPEN=never; "
+                      # A Python suite traces itself with this skill's pytest plugin
+                      # (`-p hr_genseq`); on the path, it needs installing nowhere.
+                      f"export PYTHONPATH={shlex.quote(str(HERE / 'genseq'))}"
+                      "${PYTHONPATH:+:$PYTHONPATH}; ")
         for cmd, expanded in traced_commands(commands, values or {}):
             t0 = time.monotonic()
             r = sh(app.command(own_report + expanded), ctx, check=False, capture=True)
@@ -912,8 +965,11 @@ def _trace_shot(ctx: Ctx, cfg: dict, app: AppInstance, drawn: list[str],
     grafana = expand_vars(str(tcfg.get("grafana") or ""), app.vars) if tcfg.get("grafana") \
         else app.vars.get("GRAFANA_URL") or os.environ.get("GRAFANA_URL", "")
     if not grafana or "{" in grafana:
-        ctx.notes.append("no trace shot for the Sequence tab: no Grafana to take it from "
-                         "(steps.sequence.trace.grafana, or GRAFANA_URL in app.vars)")
+        # Said only when a trace store was asked for: a suite traced by the pytest plugin
+        # (the Ludvig fork) has no Grafana to miss, and a note about one would be noise.
+        if tcfg:
+            ctx.notes.append("no trace shot for the Sequence tab: no Grafana to take it from "
+                             "(steps.sequence.trace.grafana, or GRAFANA_URL in app.vars)")
         return
     python = _playwright_python(ctx)
     if not python:
@@ -1730,8 +1786,8 @@ def _complexity(ctx: Ctx):
 
     A project that measures this itself keeps doing so — `complexity.extract` runs, and
     `before`/`after` name its two snapshots. With nothing configured, the built-in
-    extractor reads both sides out of the Java sources, the baseline straight from the
-    merge-base, and the step needs no build, no plugin and no test in the project."""
+    extractor reads both sides out of the Python sources and `serverless*.yml`, the
+    baseline straight from the merge-base, and the step needs no build and no test."""
     c = ctx.step_cfg("complexity")
     if c.get("extract"):
         sh(c["extract"], ctx)
@@ -1745,8 +1801,36 @@ def _complexity(ctx: Ctx):
     sh(f"{HERE}/endpoint-complexity-delta.py --css > {ART}/complexity-delta.css", ctx)
 
 
+def derived_specs(ctx: "Ctx") -> tuple[str, str] | None:
+    """`(before, after)` OpenAPI documents written from `serverless*.yml` and the handlers
+    (`serverless-openapi.py`), when the service keeps no spec file of its own — Ludvig's
+    don't. Both sides by the same program, so what differs is what the code changed."""
+    if Path(ctx.cfg.get("spec", "openapi.yaml")).is_file() or not has_serverless():
+        return None
+    before, after = f"{ART}/openapi-base.yaml", f"{ART}/openapi-head.yaml"
+    sh(f"{HERE}/serverless-openapi.py --base {ctx.base} --out {before}", ctx)
+    sh(f"{HERE}/serverless-openapi.py --out {after}", ctx)
+    return before, after
+
+
 def _api(ctx: Ctx):
     spec = ctx.cfg.get("spec", "openapi.yaml")
+    derived = derived_specs(ctx)
+    if derived:
+        before, after = derived
+        pair = f"{before} {after}"
+        for cmd in (
+            f"{HERE}/openapi-compat.py {pair} --out {ART}/openapi-compat.html"
+            f" --report {ART}/openapi-compat-report.html",
+            f"{HERE}/openapi-compat.py --css  >  {ART}/openapi-compat.css",
+            f"{HERE}/openapi-compat.py {pair} --panel --out {ART}/openapi-verdict.html",
+            f"{HERE}/openapi-visual-diff.py {pair} --label-old base --label-new branch "
+            f"--out {ART}/openapi-visual-diff.html",
+        ):
+            sh(cmd, ctx)
+        ctx.notes.append("no OpenAPI file in the service: both sides were derived from "
+                         "serverless*.yml and the handlers (serverless-openapi.py)")
+        return
     for cmd in (
         # `--report` is the openable twin of the fragment, written in the same run so the
         # two cannot drift. The verdict band links to it by name, and only when it can see
@@ -1775,10 +1859,18 @@ def _specchanges(ctx: Ctx):
        f"--report-file {ART}/openapi-changes.html '{base}:{spec}' ./{spec}", ctx)
 
 
+def _logextract_default_paths() -> list[str]:
+    """`logextract.default_paths` for this checkout: the service's own code folders."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("logextract", str(HERE / "logextract.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("logextract", mod)
+    spec.loader.exec_module(mod)
+    return mod.default_paths(Path.cwd())
+
+
 def _logging(ctx: Ctx):
-    paths = ctx.step_cfg("logging").get("paths") or []
-    if not paths:
-        raise LookupError("logging.paths not configured")
+    paths = ctx.step_cfg("logging").get("paths") or _logextract_default_paths()
     base = merge_base(ctx)
     sh(f"{HERE}/logextract.py {' '.join(paths)} --repo . --since {base} "
        f"--json {ART}/logging.json", ctx)
@@ -2215,10 +2307,16 @@ STEP_INPUTS = {
                      "reads": ("review-commits.json",),
                      "tools": (),
                      "outputs": ("aftermath.json",)},
-    "diagrams":     {"paths": ("*.puml", "*.drawio", "*.drawio.png", "*.drawio.svg"),
-                     "tools": ("puml-diff.sh", "drawio-diff.py",
+    "diagrams":     {"paths": ("*.puml", "*.drawio", "*.drawio.png", "*.drawio.svg", "*.py",
+                               "serverless*.yml"),
+                     "tools": ("puml-diff.sh", "drawio-diff.py", "sqlalchemy-erd.py",
+                               "structure-diagrams.py",
                                "../puml-diff/puml_diff.py", "../puml-diff/seq_puml_diff.py"),
                      "outputs": ("assets/diagrams",)},
+    "migrations":   {"paths": ("*/versions/*.py", "*.py"),
+                     "reads": ("generated-puml/DB.puml", "generated-puml/DB.base.puml"),
+                     "tools": ("alembic-review.py",),
+                     "outputs": ("assets/migrations.html",)},
     "c2":           {"paths": ("*.genseq.puml", "*.drawio", "*.drawio.png", "*.drawio.svg"),
                      # whether those were re-traced on this run: the card says so
                      "reads": ("assets/sequence.verdict.json",),
@@ -2230,13 +2328,13 @@ STEP_INPUTS = {
     "c4":           {"paths": ("*.dsl", "*Test.java", "*Tests.java", "*Test.kt", "*Tests.kt"),
                      "tools": ("structurizr-views.py",),
                      "outputs": ("assets/c4",)},
-    "complexity":   {"paths": ("*.java",),
-                     "tools": ("endpoint-complexity.py", "endpoint-complexity-delta.py",
-                               "complexity/ComplexityEngine.java"),
+    "complexity":   {"paths": ("*.java", "*.py", "serverless*.yml"),
+                     "tools": ("endpoint-complexity.py", "endpoint-complexity-delta.py"),
                      "outputs": ("assets/complexity-delta.html",
                                  "assets/complexity-delta.css")},
-    "api":          {"paths": ("*.yaml", "*.yml", "*.json"),
+    "api":          {"paths": ("*.yaml", "*.yml", "*.json", "*.py"),
                      "tools": ("openapi-compat.py", "openapi-visual-diff.py", "schema_puml.py",
+                               "serverless-openapi.py", "endpoint-complexity.py",
                                "../puml-diff/puml_diff.py"),
                      "outputs": ("assets/openapi-verdict.html",
                                  "assets/openapi-compat.html",
@@ -2245,8 +2343,8 @@ STEP_INPUTS = {
     "specchanges":  {"paths": ("*.yaml", "*.yml"),
                      "tools": (),
                      "outputs": ("assets/openapi-changes.html",)},
-    "logging":      {"paths": ("*.java", "*.ts", "*.js", "*.kt"),
-                     "tools": ("logextract.py", "ast-grep-rules"),
+    "logging":      {"paths": ("*.java", "*.ts", "*.js", "*.kt", "*.py", "*.tsx"),
+                     "tools": ("logextract.py",),
                      "outputs": ("assets/logging.json",)},
     "owners":       {"paths": ("*",),
                      "tools": ("codeowners-check.py",),
@@ -2501,6 +2599,10 @@ STEPS = [
     ("aftermath",   "review",        "what landed after the review commit",
      None,                                                                        _aftermath),
     ("diagrams",    "data,packages", "diagram deltas",            None,              _diagrams),
+    # After `diagrams`: it reads the ER diagram that step generated, to say whether the
+    # models moved without a migration.
+    ("migrations",  "data",          "Alembic migrations",
+     lambda c: has_alembic() or "no alembic versions folder in this repository", _migrations),
     ("sequence",    "sequence",      "sequence diagrams from traces",
      lambda c: bool(c.step_cfg("sequence").get("commands")) or "sequence.commands not configured",
      _sequence),
@@ -2519,16 +2621,17 @@ STEPS = [
      _c4),
     ("video",       "behaviour",     "feature recording",         None,              _video),
     ("complexity",  "complexity",    "entry-point complexity",
-     lambda c: bool(c.step_cfg("complexity")) or has_java()
-     or "no Java main sources here — nothing this step knows how to read entry points from",
+     lambda c: bool(c.step_cfg("complexity")) or has_serverless()
+     or "no serverless*.yml at the root — nothing this step knows how to read entry points from",
      _complexity),
     ("api",         "api",           "REST contract diff",
-     lambda c: Path(c.cfg.get("spec", "openapi.yaml")).is_file()
-     or f"no spec at {c.cfg.get('spec', 'openapi.yaml')}", _api),
+     lambda c: Path(c.cfg.get("spec", "openapi.yaml")).is_file() or has_serverless()
+     or f"no spec at {c.cfg.get('spec', 'openapi.yaml')}, and no serverless*.yml to derive "
+        "one from", _api),
     ("specchanges", "api",           "pb33f report",
      lambda c: have("openapi-changes") or "openapi-changes not installed", _specchanges),
     ("logging",     "logging",       "structural logging scan",
-     lambda c: have("ast-grep") or "ast-grep not installed", _logging),
+     None, _logging),
     ("dsaudit",     "dsaudit",       "design-system audit",      _dsaudit_prereq,   _dsaudit),
     ("owners",      "owners",        "codeowners check",          None,              _owners),
     ("tests",       "requirements",  "test change manifest",      None,              _tests),
@@ -2545,7 +2648,8 @@ STEPS = [
     # After `testcov`, and never before: the city is coloured by the coverage that step
     # measured (line coverage, and what the end-to-end tests alone reach).
     ("city",        "city",          "Code City capture",
-     lambda c: have("google-chrome") or have("chromium") or True, _city),
+     lambda c: bool(c.step_cfg("city"))
+     or "city not configured — Code City is postponed in the Ludvig fork", _city),
 ]
 
 
@@ -2555,6 +2659,7 @@ STEPS = [
 #: that is a real dependency rather than habit.
 NEEDS = {
     "aftermath": {"reviewpoints"},     # reads the review commit reviewpoints resolved
+    "migrations": {"diagrams"},        # reads the DB diagram diagrams generated
     "c2":        {"sequence"},         # projects the diagrams sequence drew
     "traces":    {"tests"},            # after the manifest; runs the browser suites itself
     "testcov":   {"traces"},           # reads the per-test coverage those suites dumped
@@ -2569,7 +2674,7 @@ NEEDS = {
 #: `traces` runs dumped, and `city` colours its plate with what `testcov` wrote: re-running
 #: the tests re-colours the city (Victor, 5 Oct 2026: "when we run the tests, everything
 #: that has to do with the tests should follow").
-HARVESTS = {"testcov": {"traces"}, "city": {"testcov"}}
+HARVESTS = {"testcov": {"traces"}, "city": {"testcov"}, "migrations": {"diagrams"}}
 
 
 def downstream(names: set[str]) -> set[str]:
@@ -2687,7 +2792,7 @@ def run_step(name, tabs, label, prereq, fn, ctx: Ctx,
 
     `seconds` is on every row, including the skipped ones.
 
-    A skipped row's time is not noise: half the prerequisites shell out to git (`has_java`,
+    A skipped row's time is not noise: half the prerequisites shell out to git (`has_serverless`,
     `has_genseq`) or open a socket (`answers`), and a prerequisite that takes two seconds to
     say "no" costs exactly as much as one that takes two seconds to say "yes". Without the
     number on the row, the only place that cost could be seen was the wall clock of the

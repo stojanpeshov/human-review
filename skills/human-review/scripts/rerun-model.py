@@ -477,6 +477,10 @@ def record_run(review: Path, cost, seconds: float, ledger: str = RUNS_LEDGER,
         pass
 
 
+#: Left in the review directory when no ticket resolved: the pairing is absent on purpose.
+NO_TICKET = ".no-ticket"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -521,7 +525,13 @@ def main(argv=None) -> int:
               "the branch name), no `ticket:` text, no matching openspec/changes/<name>/, "
               "no impl-conversation.md request 0 — so there are no sentences to pair.",
               file=sys.stderr)
-        return 2
+        # Said, not refused: a release PR (develop → master) names no one ticket, and the
+        # page without a matrix is the honest page for it. The marker is what tells the
+        # build the pairing is absent on purpose; any run that pairs removes it.
+        (review / NO_TICKET).write_text("no requirement text resolved for this branch\n",
+                                        encoding="utf-8")
+        return 4
+    (review / NO_TICKET).unlink(missing_ok=True)
     asked = sc.model_input(g["ticket"], g["sentences"], g["rows"], g["scripted"], g["docs"],
                            g["decisions"])
     offered = [t["id"] for t in asked["tests"]]

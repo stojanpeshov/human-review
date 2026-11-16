@@ -4114,19 +4114,6 @@ VSCODE_PR_URI = "vscode://github.vscode-pull-request-github/open-pull-request-we
 VSC_ICON = ('<svg class="vsc-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="#007ACC" d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/></svg>')
 
 
-#: The IntelliJ mark, beside the VS Code one in every *in VS Code* that opens a file: the
-#: page shows one of the two, the IDE picked in the masthead (editor.js, `html.ide-idea`).
-#: The classic face Victor asked for (20 Oct 2026): the black square with a bold white `IJ`
-#: top left and the bar under it, bottom left. The letters are JetBrains' own paths
-#: (`idea.svg`, whose black square spans 12-52 of its 64-px grid), stroked a little bolder.
-IJ_ICON = ('<svg class="ij-ico" viewBox="12 12 40 40" width="13" height="13" aria-hidden="true">'
-           '<path fill="#000" d="M12 12H52V52H12Z"/>'
-           '<path fill="#fff" stroke="#fff" stroke-width=".7" d="M17 29.39h2.98v-9.78H17V17'
-           'h8.84v2.61h-2.98v9.78h2.98V32H17zM27.34 29.3h2.15c.44 0 .82-.09 1.16-.28.34-.19.6'
-           '-.45.79-.79.19-.34.28-.73.28-1.16V17h2.92v10.27c0 .9-.2 1.71-.62 2.43a4.3 4.3 0 0 1'
-           '-1.71 1.69c-.73.41-1.55.61-2.45.61h-2.52z"/>'
-           '<path fill="#fff" d="M17 44h16v3.4H17z"/></svg>')
-
 #: GitHub's mark, in the link's own colour: a card's way to its PR comment.
 GH_ICON = ('<svg class="gh-ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">'
            '<path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07'
@@ -4143,21 +4130,20 @@ def forge_icon(name: str) -> str:
     return GH_ICON if name == "GitHub" else "↗"
 
 
-#: The face of a link that opens a file in the reader's IDE: both marks, of which the page
-#: shows the picked IDE's, and its name for a screen reader only (`.sr`), which editor.js
-#: rewrites (`.ide-word`) to the one picked. No words on screen (Victor, 20 Oct 2026): the
-#: card's header row ends in two icons, GitHub's and the IDE's, each with its tooltip.
-IDE_FACE = f'{VSC_ICON}{IJ_ICON}<span class="ide-word sr">VS Code</span>'
+#: The face of a link that opens a file in VS Code: its mark, and its name for a screen
+#: reader only (`.sr`), which editor.js rewrites (`.ide-word`) when it is disconnected. No
+#: words on screen (Victor, 20 Oct 2026): the card's header row ends in two icons, GitHub's
+#: and the IDE's, each with its tooltip.
+IDE_FACE = f'{VSC_ICON}<span class="ide-word sr">VS Code</span>'
 
-#: The masthead's two IDE chips, the same two marks in the chip's colour (commands.css):
-#: green for the IDE a click on code opens in, red for the other. One at most is connected;
-#: a press on red connects it, on green disconnects it (editor.js, `paintChips`). Online
-#: they are greyed and inert, like every control that needs a local copy (`data-local`).
-IDE_CHIPS = ''.join(
-    f'<button type="button" class="chip chip-ide" id="hr-ide-{app}" data-ide="{app}" '
-    f'aria-label="{name}" aria-pressed="false" '
-    f'data-local="Opens code in your IDE on a local copy — see Serve">{icon}</button>'
-    for app, name, icon in (("vscode", "VS Code", VSC_ICON), ("idea", "IntelliJ", IJ_ICON)))
+#: The masthead's IDE chip, VS Code's mark in the chip's colour (commands.css): green when a
+#: click on code opens in VS Code, red when it copies the path instead; a press switches
+#: (editor.js, `paintChips`). Online it is greyed and inert, like every control that needs a
+#: local copy (`data-local`).
+IDE_CHIPS = (
+    '<button type="button" class="chip chip-ide" id="hr-ide-vscode" data-ide="vscode" '
+    'aria-label="VS Code" aria-pressed="false" '
+    f'data-local="Opens code in VS Code on a local copy — see Serve">{VSC_ICON}</button>')
 
 
 def vscode_pr_uri(url: str | None) -> str | None:
@@ -4168,18 +4154,17 @@ def vscode_pr_uri(url: str | None) -> str | None:
 
 
 def vscode_pr_link(url: str | None, cls: str = "f-vsc") -> str:
-    """*in VS Code* or *in IntelliJ* — the same PR in that IDE's GitHub Pull Requests view,
-    the IDE picked in the masthead. Built with VS Code's extension URI as its address;
-    editor.js re-aims it (`aimPr`), words it (`.ide-word`, and the tip through `ideWords`)
-    and takes its click (`openPr`): served, VS Code's window on this checkout comes forward
-    before the URI, and IntelliJ's plugin is asked through the server (`/__open_pr__`)."""
+    """*in VS Code* — the same PR in VS Code's GitHub Pull Requests view. Built with the
+    extension's URI as its address; editor.js keeps it (`aimPr`), words it (`.ide-word`, and
+    the tip through `ideWords`) and takes its click (`openPr`): served, VS Code's window on
+    this checkout comes forward before the URI."""
     uri = vscode_pr_uri(url)
     if not uri:
         return ""
     n = pull_root(url).rsplit("/", 1)[1]
     return (f' <a class="{cls}" href="{html.escape(uri, quote=True)}" '
             f'data-tip="Open PR #{n} in VS Code\'s GitHub Pull Requests view">'
-            f'{VSC_ICON}{IJ_ICON} see in <span class="ide-word">VS Code</span></a>')
+            f'{VSC_ICON} see in <span class="ide-word">VS Code</span></a>')
 
 
 def vscode_file_link(href: str | None, where: str) -> str:
@@ -4240,10 +4225,10 @@ PR_RESULT_TAG = "::hr-push-result::"
 # the button for a clone, which sheds the old click handler.
 PR_PUSH_JS = """<script data-hr-swap="rerun">
 // `data-hr-swap="rerun"`: when a rebuild swaps the Review tab into an open served page this
-// runs again, over the new button and dialog (below). *in VS Code* / *in IntelliJ* (`.pr-vsc`)
-// is only drawn and shown here: editor.js aims it at the picked IDE and takes its click.
+// runs again, over the new button and dialog (below). *in VS Code* (`.pr-vsc`)
+// is only drawn and shown here: editor.js keeps its address and takes its click.
 var HR_VSC_PR = '""" + VSCODE_PR_URI + """';
-var HR_PR_FACE = '""" + (VSC_ICON + IJ_ICON).replace("'", "\\'") + """ see in <span class="ide-word">VS Code</span>';
+var HR_PR_FACE = '""" + VSC_ICON.replace("'", "\\'") + """ see in <span class="ide-word">VS Code</span>';
 var HR_IDE_FACE = '""" + IDE_FACE.replace("'", "\\'") + """';
 // The forge the build found (`data-hr-forge`); its mark only on GitHub, an arrow elsewhere.
 var HR_FORGE = document.documentElement.dataset.hrForge || 'GitHub';
@@ -4358,8 +4343,8 @@ function hrVscPr(url) {
     });
   }
   function vscLink(cls, uri, tip) {
-    // A file's: the two marks; the PR's: the two marks and the IDE's name (editor.js words
-    // both for the pick, and sends the PR to IntelliJ's Pull Requests view too).
+    // A file's: the mark; the PR's: the mark and the IDE's name (editor.js words both for
+    // the pick).
     var v = el('a', cls); v.innerHTML = cls === 'f-vsc' ? HR_IDE_FACE : HR_PR_FACE;
     if (uri) v.href = uri;
     v.dataset.tip = tip != null ? tip : 'Open PR #' + decodeURIComponent(uri).split('/').pop()

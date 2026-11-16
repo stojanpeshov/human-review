@@ -852,8 +852,7 @@ def runtime_html(rt, tail: str = "") -> str:
 def running_db_html() -> str:
     """"Running DB" and its JDBC URL, on the Running app line right after Stop: the URL,
     login included (`?user=…&password=…`), is what a reader pastes into DataGrip or DBeaver,
-    hence Copy. Served, a click on the URL itself puts it into the IntelliJ window that has
-    this checkout, as a data source, and shows its Database view (`/__open_db__`).
+    hence Copy.
 
     Empty in the markup and `hidden`: the host picks the database's port when the stack
     starts, so nothing here is knowable at build time. APP_ENV_JS fills it from the host's

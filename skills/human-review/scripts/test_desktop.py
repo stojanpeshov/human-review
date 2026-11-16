@@ -65,5 +65,5 @@ def test_off_macos_the_editor_is_started_by_its_cli(monkeypatch, calls):
 
 def test_on_macos_the_editor_is_started_as_an_application(monkeypatch, calls):
     _on(monkeypatch, "mac")
-    desktop.launch_editor("/r", "vscode")
+    desktop.launch_editor("/r")
     assert calls == [["open", "-a", "Visual Studio Code", "/r"]]

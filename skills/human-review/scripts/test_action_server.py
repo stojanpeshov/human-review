@@ -463,59 +463,6 @@ def test_the_db_command_is_declared_only_when_the_content_file_says_so(tmp_path)
     assert run < db
 
 
-def test_the_jdbc_url_carries_the_login_as_pgjdbc_parameters():
-    facts = {"JDBC_URL": "jdbc:postgresql://localhost:50207/petclinic",
-             "DB_USER": "petclinic", "DB_PASSWORD": "pet clinic&1"}
-    assert srv.db_jdbc_url(facts) == ("jdbc:postgresql://localhost:50207/petclinic"
-                                      "?user=petclinic&password=pet+clinic%261")
-    # Only a loopback database, and nothing that could smuggle XML or a shell into it.
-    assert srv.db_jdbc_url({"JDBC_URL": "jdbc:postgresql://db.example.com:5432/x"}) is None
-    assert srv.db_jdbc_url({"JDBC_URL": "jdbc:postgresql://localhost:1/x\"><a"}) is None
-
-
-def test_the_data_source_is_upserted_and_the_others_are_kept(tmp_path):
-    (tmp_path / ".idea").mkdir()
-    (tmp_path / ".idea" / "dataSources.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>\n<project version="4">\n'
-        '  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">\n'
-        '    <data-source source="LOCAL" name="mine" uuid="1"><jdbc-url>jdbc:x</jdbc-url>'
-        '</data-source>\n  </component>\n</project>\n', encoding="utf-8")
-    srv.write_data_source(tmp_path, "jdbc:postgresql://localhost:1/p?user=u&password=p")
-    srv.write_data_source(tmp_path, "jdbc:postgresql://localhost:2/p?user=u&password=p")
-    import xml.etree.ElementTree as ET
-    root = ET.parse(tmp_path / ".idea" / "dataSources.xml").getroot()
-    sources = root.findall("component/data-source")
-    assert [d.get("name") for d in sources] == ["mine", srv.DB_SOURCE_NAME]
-    assert sources[1].findtext("jdbc-url") == "jdbc:postgresql://localhost:2/p?user=u&password=p"
-    assert sources[1].findtext("driver-ref") == "postgresql"
-    # URL only, No auth: the login in the URL is used, and IntelliJ does not prompt.
-    assert sources[1].findtext("configured-by-url") == "true"
-    local = ET.parse(tmp_path / ".idea" / "dataSources.local.xml").getroot()
-    [mine] = local.findall("component[@name='dataSourceStorageLocal']/data-source")
-    assert mine.get("uuid") == sources[1].get("uuid")
-    assert mine.findtext("auth-provider") == "no-auth"
-
-
-def test_no_intellij_window_on_the_checkout_opens_it_there_then_shows_the_db(tmp_path, monkeypatch):
-    launched, tries = [], []
-    monkeypatch.setattr(srv, "_launch_in", lambda app, folder: launched.append((app, folder)))
-    # The window comes up on the second poll.
-    monkeypatch.setattr(srv, "open_db_in_idea", lambda root, url: (
-        tries.append(root), {"how": "opened"} if len(tries) > 1 else None)[1])
-    url = "jdbc:postgresql://localhost:1/p?user=u&password=p"
-    done = srv.launch_idea_for_db(tmp_path, url, wait=5, poll=0.01)
-    assert done == {"how": "launching", "window": tmp_path.name}
-    assert launched == [("idea", tmp_path)]
-    # The project IntelliJ opens already holds the data source.
-    import xml.etree.ElementTree as ET
-    root = ET.parse(tmp_path / ".idea" / "dataSources.xml").getroot()
-    assert root.findtext("component/data-source/jdbc-url") == url
-    deadline = time.monotonic() + 3
-    while len(tries) < 2 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert len(tries) == 2
-
-
 def test_a_section_with_no_runtime_declares_nothing(tmp_path):
     build.ACTIONS.clear()
     (tmp_path / "assets").mkdir()

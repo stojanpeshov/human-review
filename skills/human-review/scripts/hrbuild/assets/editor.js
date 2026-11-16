@@ -101,20 +101,14 @@
       + '&branch=' + encodeURIComponent(STAMP.hrBranch || '');
   }
 
-  // Which IDE a click on code opens in: VS Code or IntelliJ (16 Oct 2026, Victor), or none.
-  // Both run the same bridge — VS Code's extension, IntelliJ's plugin — and the server routes
-  // every editor request to the one picked here (`ide=`), and to the other only when the
-  // picked one has no window on the file (the answer says so, and so does the toast).
-  // Picked with the two logos in the masthead (`paintChips`, 20 Oct 2026): the green one is
-  // connected, at most one is, a press on red connects it and a press on green leaves none —
-  // then a click on code copies its `path:line` instead. Remembered per browser; never
-  // picked, none is connected and both logos are red. Off disk there
-  // is no server to route, but the pick still holds: IntelliJ gets
-  // `jetbrains://idea/human-review/…` links (`ideaLink`), which its plugin routes itself;
-  // VS Code keeps `vscode://`.
+  // Whether a click on code opens in VS Code, or opens nothing and copies its `path:line`.
+  // VS Code is the one IDE (the IntelliJ plugin is dropped at Ludvig); the server routes every
+  // editor request it is sent (`ide=`) through the extension's bridge. Switched with the
+  // logo in the masthead (`paintChips`): green, connected; a press on green disconnects it,
+  // a press on red connects it. Remembered per browser; never picked, it is red.
   // The key is also read by code-city's page, served from this origin: renaming it sends
   // the city's clicks back to VS Code.
-  var IDE_KEY = 'hr-ide', IDE_NAME = {vscode: 'VS Code', idea: 'IntelliJ'};
+  var IDE_KEY = 'hr-ide', IDE_NAME = {vscode: 'VS Code'};
   var connected = [];
   // Read once and kept here too, so a browser that refuses storage still keeps the pick
   // for as long as the tab is open.
@@ -131,19 +125,15 @@
   // Where a click on code can reach an IDE at all: served, or off disk at top level.
   // Embedded off disk it is copied whatever the pick, and online it goes to GitHub.
   function reachable() { return SERVED || (!EMBEDDED && location.protocol === 'file:'); }
-  // Off disk, at top level, with IntelliJ the pick: clicks go to IntelliJ's plugin.
-  function offDiskIdea() { return !SERVED && reachable() && ide() === 'idea'; }
   // The IDE the page's words are about: the pick where a click honours it, else VS Code,
   // whose `vscode://` the links carry. Null: none connected.
   function shownIde() { return reachable() ? ide() : 'vscode'; }
-  // The faces follow the pick: `.ide-word` in every "in VS Code" link, and the two marks
-  // beside it, one of which `html.ide-idea` hides and both of which `html.ide-none` does
-  // (review.css, genseq.css). Tooltips are reworded as tip.js shows them (`ideWords`), so a
-  // tip another script sets late follows too. `hr-ide` on the document after each paint,
-  // for what words itself elsewhere (folders.js).
+  // The faces follow the pick: `.ide-word` in every "in VS Code" link, and the mark beside
+  // it, which `html.ide-none` hides (review.css, genseq.css). Tooltips are reworded as tip.js
+  // shows them (`ideWords`), so a tip another script sets late follows too. `hr-ide` on the
+  // document after each paint, for what words itself elsewhere (folders.js).
   function paintIde() {
     var shown = shownIde();
-    document.documentElement.classList.toggle('ide-idea', shown === 'idea');
     document.documentElement.classList.toggle('ide-none', !shown);
     [].forEach.call(document.querySelectorAll('.ide-word'),
                     function (w) { w.textContent = shown ? IDE_NAME[shown] : 'your IDE'; });
@@ -153,26 +143,26 @@
     document.dispatchEvent(new CustomEvent('hr-ide'));
   }
   window.HR.ide = function () { return SERVED ? ide() : null; };
-  // True when the reader disconnected both IDEs: nothing on the page may open one.
+  // True when the reader disconnected VS Code: nothing on the page may open it.
   window.HR.ideOff = function () { return reachable() && !ide(); };
   window.HR.ideName = function (app) { return IDE_NAME[app || shownIde()] || 'your IDE'; };
   // Not the chips' own tips: they name the IDE they are about.
   window.HR.ideWords = function (text, el) {
-    var shown = shownIde(), to = shown === 'idea' ? 'IntelliJ' : shown ? null : 'your IDE';
+    var to = shownIde() ? null : 'your IDE';
     if (!text || !to || (el && el.closest && el.closest('.chip-ide'))) return text;
     return String(text).replace(/VS Code/g, to);
   };
 
-  // ---- The two logos in the masthead ---------------------------------------------------
-  // Connected: that IDE's logo alone, green — amber instead when the server says its window
-  // is on another commit of this checkout, so only files unchanged since open. Nothing
-  // connected: both logos, red, to pick from. Online they carry no colour: core.css greys
-  // them like every `data-local` control and server.js answers a press.
+  // ---- The VS Code logo in the masthead --------------------------------------------------
+  // Connected: green — amber instead when the server says its window is on another commit
+  // of this checkout, so only files unchanged since open. Not connected: red. Online it
+  // carries no colour: core.css greys it like every `data-local` control and server.js
+  // answers a press.
   var chips = [].slice.call(document.querySelectorAll('.chip-ide[data-ide]'));
   var said = null;                         // the last badge poll's answer, about `ide()`
   // Picked, but the server says no window of it has this checkout: red, not green, and a
   // press opens it there rather than disconnecting (Victor, 29 Oct 2026: it was green with
-  // IntelliJ on another project, and every button failed until a disconnect and reconnect).
+  // the IDE on another project, and every button failed until a disconnect and reconnect).
   function away(app) { return SERVED && app === ide() && !!said && said.state === 'off'; }
   function paintChips() {
     var on = ide(), local = reachable();
@@ -184,8 +174,8 @@
       chip.classList.toggle('ide-off', local && (!mine || gone));
       chip.hidden = local && !!on && !mine;
       chip.setAttribute('aria-pressed', mine ? 'true' : 'false');
-      // One line, what a press does (Victor, 20 Oct 2026: "say click to disconnect IntelliJ,
-      // the rest should not be there"). The colour already tells the state.
+      // One line, what a press does (Victor, 20 Oct 2026: "say click to disconnect, the rest
+      // should not be there"). The colour already tells the state.
       var head = gone ? (said.tip || '').split('\n')[0] || 'Click to open this checkout in ' + name
         : (mine ? 'Click to disconnect ' : 'Click to connect ') + name;
       chip.setAttribute('data-tip', head);
@@ -212,17 +202,13 @@
     });
   });
 
-  // ---- The href itself follows the pick ------------------------------------------------
+  // ---- The address of a code link -------------------------------------------------------
   // Every code link is built as `vscode://file/…`, and that stays its address: kept in
   // `data-hr-code` the first time this sees it, and read through `codeHref` by everything
-  // that needs the file and line (here, genseq.js, xref.js). What the `href` SAYS is the
-  // picked IDE's own URL — IntelliJ's `jetbrains://` when it is the pick and a click can
-  // reach it — so the status bar on hover, a middle-click and Copy Link Address all name
-  // the IDE the reader chose (Victor, 29 Oct 2026: a `.dgm-src` hovered with IntelliJ
-  // picked still read `vscode://`). Re-aimed on every pick (`paintIde`), and for every link
-  // a script draws or re-points later (the observer below): a statement panel's handler,
-  // a tooltip's file list, a test row opened for the first time.
-  var XLINK_NS = 'http://www.w3.org/1999/xlink';
+  // that needs the file and line (here, genseq.js, xref.js) — also once server.js has
+  // pointed the href at GitHub. Recorded on every paint (`paintIde`), and for every link a
+  // script draws or re-points later (the observer below): a statement panel's handler, a
+  // tooltip's file list, a test row opened for the first time.
   var CODE_LINK = 'a[href^="vscode://file/"], a[data-hr-code]';
   function codeHref(a) {
     var h = a.getAttribute('href') || '';
@@ -232,13 +218,8 @@
   function aim(a) {
     var h = a.getAttribute('href') || '';
     // A link re-pointed by a script carries its new address; one turned into GitHub's
-    // online (server.js) or into anything else is no longer this file's to aim.
+    // online (server.js) keeps the one it had.
     if (/^vscode:\/\/file\//.test(h)) a.setAttribute('data-hr-code', h);
-    else if (h.indexOf('jetbrains://idea/human-review/') !== 0) return;
-    var want = reachable() && ide() === 'idea' ? (ideaLink(a) || codeHref(a)) : codeHref(a);
-    if (h === want) return;
-    a.setAttribute('href', want);
-    if (a.hasAttributeNS && a.hasAttributeNS(XLINK_NS, 'href')) a.setAttributeNS(XLINK_NS, 'xlink:href', want);
   }
   function aimAll(root) {
     if (root.matches && root.matches(CODE_LINK)) aim(root);
@@ -260,35 +241,18 @@
     }).observe(document.documentElement, {childList: true, subtree: true, attributes: true, attributeFilter: ['href']});
   }
 
-  // ---- The PR line's link follows the pick too -------------------------------------------
-  // *in VS Code* / *in IntelliJ* on the Review tab's PR line (`a.pr-vsc`, review.py): the
-  // pull request in that IDE's GitHub Pull Requests view. Built with the VS Code extension's
-  // URI, which stays its address in `data-hr-pr`; with IntelliJ the pick and reachable, the
-  // href is the plugin's `open-pr` link instead, and the word on its face says IntelliJ.
-  // Its click is taken below (`openPr`), like a code link's.
+  // ---- The PR line's link -----------------------------------------------------------------
+  // *in VS Code* on the Review tab's PR line (`a.pr-vsc`, review.py): the pull request in
+  // VS Code's GitHub Pull Requests view. Built with the extension's URI, which stays its
+  // address in `data-hr-pr`. Its click is taken below (`openPr`), like a code link's.
   var PR_LINK = 'a.pr-vsc';
   function prHref(a) {
     var h = a.getAttribute('href') || '';
     return /^vscode:/.test(h) ? h : (a.getAttribute('data-hr-pr') || h);
   }
-  // The pull request itself, out of the extension URI's `uri=`; null for anything else.
-  function prUrl(a) {
-    var m = /[?&]uri=([^&#]+)/.exec(prHref(a));
-    var url = m ? decodeURIComponent(m[1]) : '';
-    return /^https:\/\/github\.com\/[^\/?#]+\/[^\/?#]+\/pull\/\d+$/.test(url) ? url : null;
-  }
-  // The plugin's own link, for a page with no server: it finds the window from `root`.
-  function prIdeaLink(a) {
-    var url = prUrl(a);
-    return url ? 'jetbrains://idea/human-review/open-pr?url=' + encodeURIComponent(url)
-      + (STAMP.hrRoot ? '&root=' + encodeURIComponent(STAMP.hrRoot) : '') : null;
-  }
   function aimPr(a) {
     var h = a.getAttribute('href') || '';
     if (/^vscode:/.test(h)) a.setAttribute('data-hr-pr', h);
-    else if (h.indexOf('jetbrains://idea/human-review/open-pr') !== 0) return;
-    var want = reachable() && ide() === 'idea' ? (prIdeaLink(a) || prHref(a)) : prHref(a);
-    if (h !== want) a.setAttribute('href', want);
     // A link drawn after the last paint (PR_PUSH_JS, once the push record is read).
     var w = a.querySelector('.ide-word'), shown = shownIde();
     if (w) w.textContent = shown ? IDE_NAME[shown] : 'your IDE';
@@ -336,53 +300,12 @@
     return end ? '&endLine=' + end : '';
   }
 
-  // The IntelliJ plugin's twin of the VS Code extension's URI handler, for a page with no
-  // server: `jetbrains://idea/human-review/<diff|review-open|open>?…`, the same queries
-  // uri-handler.js reads. The plugin finds the project window that owns the file itself, so
-  // the link names a path, never a window. A diff handle asks for the diff (the plugin says so
-  // and opens the file when there is none); a page that knows its commit asks for the reviewed
-  // version; anything else opens the file, as a range when the face names one. `jetbrains://`
-  // belongs to JetBrains Toolbox, which hands it to its IntelliJ — the reason this is only
-  // ever sent to a reader who picked IntelliJ.
-  function ideaLink(link) {
-    // The href first, then the address editor.js keeps once the href names IntelliJ
-    // (`codeHref`, spelled out: this runs in tests without the rest of the file).
-    var aim = parse(link.getAttribute('href') || '') || parse(link.getAttribute('data-hr-code') || '');
-    if (!aim) return null;
-    function url(kind, q) {
-      var out = [];
-      for (var k in q) {
-        if (q[k] !== null && q[k] !== undefined && q[k] !== '') out.push(k + '=' + encodeURIComponent(q[k]));
-      }
-      return 'jetbrains://idea/human-review/' + kind + '?' + out.join('&');
-    }
-    var base = link.getAttribute('data-diff-base');
-    if (base && link.getAttribute('data-diff-path')) {
-      // `head`: a commit's own diff (a Fixed card's fix commit), not against the tree.
-      return url('diff', {file: aim.path, base: base, head: link.getAttribute('data-diff-head'),
-                          line: aim.line});
-    }
-    var end = endOf(link, aim.line);
-    // A PR comment's card, as the served page sends it (`commentQuery`).
-    var c = commentAim(link, aim.path, aim.line);
-    var said = c ? {comment: 1, commentLine: c.at !== c.line ? c.at : '', commentUrl: c.url} : {};
-    if (STAMP.hrHead) {
-      return url('review-open', Object.assign({file: aim.path, line: aim.line, endLine: end, sha: STAMP.hrHead,
-                                 root: STAMP.hrRoot, branch: STAMP.hrBranch}, said));
-    }
-    return url('open', Object.assign({file: aim.path, line: aim.line, endLine: end}, said));
-  }
-
   // A card posted to the PR names its thread on its "on GitHub \u2197" link (`data-pr-*`).
   // A click on one of that card's references to the same file, on lines that overlap the
   // thread's, asks the editor to bring the thread up too \u2014 expanded and focused, ready
   // for Reply or Resolve \u2014 with `comment=1`, plus `commentLine` when GitHub anchored it
   // on another line than the reference starts on (a thread sits on its range's last line).
   // Any other link sends nothing, and opens exactly as it did.
-  //
-  // The comment's own GitHub URL rides along as `commentUrl` (the ↗'s href): IntelliJ cannot
-  // expand a PR thread in the file, so its plugin lands on the lines and offers "Open on
-  // GitHub" instead — and needs to know where that is.
   function commentAim(link, path, line) {
     for (var li = link.closest && link.closest('li'); li;
          li = li.parentElement && li.parentElement.closest('li')) {
@@ -397,7 +320,7 @@
       var from = Number(gh.getAttribute('data-pr-start')) || at;
       var a = Number(line), b = Number(endOf(link, line) || line);
       if (!at || b < from || a > at) return null;
-      return {at: at, line: a, url: gh.getAttribute('href') || ''};
+      return {at: at, line: a};
     }
     return null;
   }
@@ -405,8 +328,7 @@
   function commentQuery(link, path, line) {
     var c = commentAim(link, path, line);
     if (!c) return '';
-    return '&comment=1' + (c.at !== c.line ? '&commentLine=' + c.at : '')
-      + (c.url ? '&commentUrl=' + encodeURIComponent(c.url) : '');
+    return '&comment=1' + (c.at !== c.line ? '&commentLine=' + c.at : '');
   }
 
   // The one button on the page that copies something that is not a source reference:
@@ -645,13 +567,13 @@
   // THE one way a click reaches source code (Victor, 29 Oct 2026: "it should never happen
   // again"). Every code link on the page is an `<a href="vscode://file/…">` — HTML or SVG,
   // drawn by the build or by a script — and this listener on `document` turns its click into
-  // whatever the IDE picked in the masthead takes: a request to the server with `ide=`,
-  // IntelliJ's `jetbrains://` off disk, VS Code's own handler, or a copied `path:line`. The
+  // whatever the masthead's IDE switch allows: a request to the server with `ide=`, VS
+  // Code's own handler, or a copied `path:line`. The
   // href is only the address. A script that opens code without a real click on such a link
   // — a panel that keeps its clicks to itself, a handle whose target it computed — hands it
   // to `HR.openCode` (below) instead of `location.href`, which is how the Sequence tab's
-  // statement panel opened VS Code with IntelliJ picked. The PR line's *in VS Code* /
-  // *in IntelliJ* (`a.pr-vsc`) is not code, and is taken here all the same (`openPr`).
+  // statement panel opened VS Code with it disconnected. The PR line's *in VS Code*
+  // (`a.pr-vsc`) is not code, and is taken here all the same (`openPr`).
   // test_editor_links.py fails a page, or a script, that navigates to an editor any other way.
   document.addEventListener('click', function (ev) {
     var link = ev.target.closest && ev.target.closest('a[href^="vscode:"], a[data-hr-code], ' + PR_LINK);
@@ -673,11 +595,11 @@
       flash('Works on a local copy \u2014 see Serve');
       return;
     }
-    // Both logos red: the reader disconnected the IDEs, so nothing opens one. The reference
-    // is copied instead, and the toast says where to connect one.
+    // The logo red: the reader disconnected VS Code, so nothing opens it. The reference
+    // is copied instead, and the toast says where to connect it.
     if (window.HR.ideOff()) {
       var r0 = refOf(link);
-      copy(r0).then(function () { flash('Copied ' + r0 + ' — no IDE connected (logos at the top)'); });
+      copy(r0).then(function () { flash('Copied ' + r0 + ' — no IDE connected (logo at the top)'); });
       return;
     }
     // A fix is a change, so the reference to it opens as a change. Only the served path
@@ -707,10 +629,6 @@
         .catch(function () { flash('The review server is no longer running'); });
       return;
     }
-    // Off disk, IntelliJ picked: every reference goes to its plugin (`ideaLink`), a diff
-    // handle as a diff, a stamped page through the reviewed-version check.
-    var jb = offDiskIdea() && ideaLink(link);
-    if (jb) { window.location.href = jb; return; }
     // Not served, and at top level: the extension's URI handler is the only channel left
     // that can materialise a before-image out of git. It is emitted only where the build
     // found that extension installed, so a portable guide never carries a URL that would
@@ -764,35 +682,12 @@
   }
   window.HR.openCode = openCode;
 
-  // The PR line's link: the pull request in the picked IDE's GitHub Pull Requests view.
-  // IntelliJ, served: the server asks the plugin in the IntelliJ window that has this
-  // checkout (`/__open_pr__`) and the toast relays its answer; off disk at top level, the
-  // plugin's own `open-pr` link. VS Code: served, the window on this checkout comes forward
-  // first (`/__editor_open__`), because VS Code hands a URI to the window used last; then
-  // the OS gets the extension's URI.
+  // The PR line's link: the pull request in VS Code's GitHub Pull Requests view. Served,
+  // the window on this checkout comes forward first (`/__editor_open__`), because VS Code
+  // hands a URI to the window used last; then the OS gets the extension's URI.
   function openPr(a) {
-    var url = prUrl(a), href = prHref(a);
+    var href = prHref(a);
     function go() { window.location.href = href; }
-    if (ide() === 'idea' && reachable() && url) {
-      if (SERVED && CAPS.openPr) {
-        fetch('/__open_pr__', {method: 'POST', cache: 'no-store',
-          headers: {'Content-Type': 'application/json', 'X-Human-Review-Token': CAPS.token || ''},
-          body: JSON.stringify({url: url})})
-          .then(function (r) {
-            if (!r.ok) return r.text().then(function (t) { flash(t || 'IntelliJ could not open the PR'); });
-            return r.json().then(function (j) {
-              flash('Opened PR #' + (j.number || url.split('/').pop()) + ' in IntelliJ'
-                + (j.window ? ' \u2014 ' + j.window : ''));
-            });
-          })
-          .catch(function () { flash('The review server is no longer running'); });
-        return;
-      }
-      // Off disk; or served by a server from before `/__open_pr__`, at top level.
-      if (!EMBEDDED) { window.location.href = prIdeaLink(a); return; }
-      flash('This review server cannot open PRs in IntelliJ \u2014 restart it');
-      return;
-    }
     if (!SERVED || !CAPS.token) { go(); return; }
     fetch('/__editor_open__', {method: 'POST', cache: 'no-store',
       headers: {'Content-Type': 'application/json', 'X-Human-Review-Token': CAPS.token},

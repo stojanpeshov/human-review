@@ -60,7 +60,7 @@ from pathlib import Path, PurePosixPath
 
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hrbuild.shared.forge import api_forge, is_comment_url, pull_root  # noqa: E402
+from hrbuild.shared.forge import api_forge  # noqa: E402
 import desktop  # noqa: E402
 
 MARKER = "/__human_review__"
@@ -91,14 +91,6 @@ REVEAL = "/__reveal__"
 # the Explorer of the VS Code window that has the checkout, and raise it. The page names
 # the folder relative to the checkout; anything not a folder inside ROOT is refused.
 REVEAL_FOLDER = "/__reveal_folder__"
-# The Demo tab's Running DB link: put the running app's database into the checkout's
-# IntelliJ project as a data source and show it in IntelliJ's Database view. What gets
-# written comes from the last `demo-env-db` run this server made, never from the page.
-OPEN_DB = "/__open_db__"
-# The Review tab's *in IntelliJ* on the PR line: that pull request selected in IntelliJ's
-# GitHub "Pull Requests" tool window, in the IntelliJ window that has this checkout. The page
-# names the PR, a github.com pull URL and nothing else; the window comes from ROOT.
-OPEN_PR = "/__open_pr__"
 # The Sequence tab's Bruno button on a request arrow's panel: that request written into a
 # Bruno collection under the checkout's `.human-review/bruno/`, and Bruno asked to open the
 # collection. Bruno has no deep link to a request (its `bruno://` scheme only takes OAuth2
@@ -336,12 +328,10 @@ def git_root(start):
 BRIDGE_REGISTRIES = (Path(".human-review") / "ide", Path(".walkie-talkie") / "ide")
 
 #: The editors a bridge can belong to, by the `app` its registry file is named after and its
-#: /ping answers with, and what the page calls each. IntelliJ's plugin (intellij-plugin/ in
-#: this repo) speaks the VS Code extension's protocol, as `idea-<pid>.json`; its one process
-#: hosts every IntelliJ window, so its /ping lists the roots of every open project. VS Code
-#: first: a VS Code window and an IntelliJ project with an equal claim on a path is a tie,
-#: and a reader who asked for neither gets what they always got.
-IDES = {"vscode": "VS Code", "idea": "IntelliJ"}
+#: /ping answers with, and what the page calls each. VS Code alone at Ludvig: the IntelliJ
+#: plugin that spoke the same protocol (`idea-<pid>.json`) is dropped, and a bridge that
+#: answers as any other app is passed over.
+IDES = {"vscode": "VS Code"}
 
 
 def app_of(info) -> str:
@@ -358,9 +348,7 @@ def wanted_ide(raw) -> str | None:
 
 def bridge_files():
     """Every bridge registry entry, the extension's own first. One file name is one extension
-    host, so a window running both extensions is asked once, through the extension's entry.
-    VS Code's before IntelliJ's in each registry, so routing ties break the way they always
-    did (`IDES`)."""
+    host, so a window running both extensions is asked once, through the extension's entry."""
     seen = set()
     for rel in BRIDGE_REGISTRIES:
         for app in IDES:
@@ -427,30 +415,22 @@ def owning_windows(target: Path):
 
 
 def windows_of(app: str, target: Path):
-    """`owning_windows`, only the ones of editor `app`. Every route but the choice itself
-    goes through here, so a request that named no IDE (`app` "vscode") reaches exactly the
-    windows it reached before IntelliJ had a bridge."""
+    """`owning_windows`, only the ones of editor `app` (`IDES`)."""
     return [(e, i) for e, i in owning_windows(target) if app_of(i) == app]
 
 
 def pick_ide(ide: str | None, *targets: Path) -> tuple[str, bool]:
-    """`(app, fell_back)`: the editor a click the page aimed at `ide` goes to.
-
-    Always the one the reader chose: its bridge opens a file no window of it has yet, so
-    there is nothing to rescue by sending the click to the other editor (Victor, 20 Oct 2026:
-    IntelliJ connected, and a click opened VS Code — "do you want to route them to VSC?").
-    `fell_back` stays in the shape for the callers and the page, and is never true now.
-    No `ide` asks nothing of the bridges: VS Code, as before."""
+    """`(app, fell_back)`: the editor a click the page aimed at `ide` goes to — always the
+    one the reader chose, VS Code. `fell_back` stays in the shape for the callers and the
+    page, and is never true. No `ide` asks nothing of the bridges: VS Code, as before."""
     if ide not in IDES:
         return "vscode", False
     return ide, False
 
 
 def os_open_url(app: str, path, line) -> str:
-    """What `open` is handed when no bridge took the click: each editor's own scheme. Both
-    route to the window that has the file's project, or open one."""
-    if app == "idea":
-        return "idea://open?" + urllib.parse.urlencode({"file": str(path), "line": line})
+    """What `open` is handed when no bridge took the click: VS Code's own scheme, which
+    routes to the window that has the file's folder, or opens one."""
     return f"vscode://file/{path}:{line}:1"
 
 
@@ -476,34 +456,27 @@ def line_span(q: dict) -> tuple[int, int | None]:
 def comment_aim(q: dict, line: int) -> dict:
     """The PR comment thread a click asks the editor to bring up, as `open_in_editor` /
     `review_open` keyword arguments: `{"comment": True}`, plus `comment_line` when GitHub
-    anchored the thread on another line than the reference starts on, and `comment_url`,
-    the comment on GitHub — what IntelliJ offers to open, since it cannot expand the thread
-    in the file. Empty for anything but an explicit `comment=1`/`true`; a malformed
-    `commentLine` is dropped, not guessed — the bridge then looks on the reference's own
-    first line — and so is a `commentUrl` that is not a GitHub pull request's."""
+    anchored the thread on another line than the reference starts on. Empty for anything
+    but an explicit `comment=1`/`true`; a malformed `commentLine` is dropped, not guessed —
+    the bridge then looks on the reference's own first line."""
     if (q.get("comment") or [""])[0] not in ("1", "true"):
         return {}
     raw = (q.get("commentLine") or [""])[0]
     at = int(raw) if raw.isdigit() and int(raw) > 0 else None
-    url = (q.get("commentUrl") or [""])[0]
-    return {"comment": True, **({"comment_line": at} if at and at != line else {}),
-            **({"comment_url": url} if is_comment_url(url) else {})}
+    return {"comment": True, **({"comment_line": at} if at and at != line else {})}
 
 
-def _comment_fields(comment, comment_line, comment_url=None):
+def _comment_fields(comment, comment_line):
     """What the bridge is sent for a comment: nothing unless asked, so a bridge too old to
     know it gets the request it always did."""
     if not comment:
         return {}
-    return {"comment": True, **({"commentLine": comment_line} if comment_line else {}),
-            **({"commentUrl": comment_url} if comment_url else {})}
+    return {"comment": True, **({"commentLine": comment_line} if comment_line else {})}
 
 
-def open_in_editor(path, line, end_line=None, comment=False, comment_line=None, app="vscode",
-                   comment_url=None):
+def open_in_editor(path, line, end_line=None, comment=False, comment_line=None, app="vscode"):
     """Land the reader in the class. Through the VS Code window that has this file's
-    folder open where the bridge is installed, and through the OS otherwise. `app` "idea"
-    is the same through IntelliJ's (`pick_ide` chose it): one route, two editors.
+    folder open where the bridge is installed, and through the OS otherwise.
 
     `end_line` makes it a range: the bridge selects `line..end_line`, highlights it and
     fades the rest until the reader moves. Sent only when there is one, so a bridge too
@@ -511,8 +484,7 @@ def open_in_editor(path, line, end_line=None, comment=False, comment_line=None, 
 
     `comment` asks the bridge to bring up the PR comment thread on the reference too —
     expanded and focused, on `comment_line` when GitHub anchored it on another line than
-    `line` — so the reader can reply or resolve it right there. `comment_url`, the comment on
-    GitHub, is what IntelliJ offers to open instead: it has no API to expand the thread.
+    `line` — so the reader can reply or resolve it right there.
 
     The page cannot do this itself: its references are `vscode://file/...` links, and the
     embedded browser's iframe is sandboxed under a `frame-src *` CSP, so a webview cannot
@@ -535,7 +507,7 @@ def open_in_editor(path, line, end_line=None, comment=False, comment_line=None, 
                     # accident. The bridge raises the window natively.
                     data=json.dumps({"path": str(path), "line": line, "focus": True,
                                      **({"endLine": end_line} if end_line else {}),
-                                     **_comment_fields(comment, comment_line, comment_url)}).encode(),
+                                     **_comment_fields(comment, comment_line)}).encode(),
                     headers={"x-relay-token": entry["token"], "Content-Type": "application/json"})
                 # A comment adds the bridge's wait for the PR extension's threads (≤ ~2 s).
                 urllib.request.urlopen(req, timeout=8 if comment else 5).read()
@@ -549,13 +521,13 @@ def open_in_editor(path, line, end_line=None, comment=False, comment_line=None, 
     # raises it — measured, across three windows on three checkouts of one project — so
     # this is a good fallback, not a bad one. It degrades to the last-active window only
     # when no window owns the path at all, which is also the one case nothing better
-    # exists. IntelliJ's `idea://open` does the same for a project it has.
+    # exists.
     desktop.open_url(os_open_url(app, path, line))
     return "os"
 
 
 def review_open(path, line, sha, root, branch, end_line=None, comment=False, comment_line=None,
-                app="vscode", comment_url=None):
+                app="vscode"):
     """Ask the editor bridge to open `path` in a window holding the *reviewed* version of it.
 
     Any window will do as the one asked: the extension compares the file at each window's
@@ -564,13 +536,12 @@ def review_open(path, line, sha, root, branch, end_line=None, comment=False, com
     window that answers, or None when no bridge is listening — then the caller opens the file
     the way it always has, because without the bridge there is nothing to check against.
 
-    Only `app`'s bridges are asked. One that does not have the route yet — IntelliJ's answers
-    501 — is passed over like one too old to know it (404), so the caller's plain open-file
-    lands in *that* editor rather than the click switching IDE behind the reader's back."""
+    Only `app`'s bridges are asked. One too old to know the route (404), or one that does
+    not do it (501), is passed over, and the caller's plain open-file takes the click."""
     payload = json.dumps({"file": str(path), "line": line, "sha": sha, "root": root,
                           "branch": branch,
                           **({"endLine": end_line} if end_line else {}),
-                          **_comment_fields(comment, comment_line, comment_url)}).encode()
+                          **_comment_fields(comment, comment_line)}).encode()
     for f in bridge_files():
         if not f.name.startswith(f"{app}-"):
             continue
@@ -583,7 +554,7 @@ def review_open(path, line, sha, root, branch, end_line=None, comment=False, com
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
             # 404: a bridge too old to know the route — the next window may be newer.
-            # 501: one that does not do it yet (IntelliJ's) — the same, as far as we care.
+            # 501: one that does not do it — the same, as far as we care.
             if e.code in (404, 501):
                 continue
             return e.code, e.read()
@@ -596,12 +567,11 @@ def refused_blind(answer, path, sha, root, app="vscode") -> bool:
     """Whether a bridge's "no window is on this commit" is contradicted by the facts: `app`
     has a window owning `path`, and the file at `root`'s HEAD is the blob at `sha`.
 
-    A bridge decides by running git, and an IntelliJ can lose that without a word. Toolbox
-    updated one on disk while it ran (5 Nov 2026): its JVM still spawns through
-    `lib/jspawnhelper`, now a newer JDK's, so every process start failed the version check,
-    every git answer came back empty, and each click read "No open IntelliJ window is on this
-    commit" with that window open on that commit. This process can still run git, and opening
-    a file needs none, so the click goes through here; a refusal that is true stays one."""
+    A bridge decides by running git, and an editor can lose that without a word (5 Nov
+    2026: an editor updated on disk while it ran failed every process start, every git
+    answer came back empty, and each click read "no window is on this commit" with that
+    window open on that commit). This process can still run git, and opening a file needs
+    none, so the click goes through here; a refusal that is true stays one."""
     status, body = answer
     if status != 409 and status != 503:
         return False
@@ -630,8 +600,8 @@ def _git(cwd, *args) -> str:
 
 
 def _pings(timeout=1.5):
-    """(registry entry, /ping answer) for every editor window whose bridge answers — VS
-    Code's and IntelliJ's; the caller keeps the ones it is about (`app_of`)."""
+    """(registry entry, /ping answer) for every editor window whose bridge answers; the
+    caller keeps the ones it is about (`app_of`)."""
     out = []
     for f in bridge_files():
         try:
@@ -649,9 +619,8 @@ def _pings(timeout=1.5):
 
 def connected_ides(pings, spellings) -> list[dict]:
     """The editors with a window on this checkout, for the page's IDE picker: one entry per
-    editor however many of its windows claim it, VS Code first. `label` is the product's
-    own name where its bridge says one ("IntelliJ IDEA"); `focused`, whether one of those
-    windows is the frontmost app's."""
+    editor however many of its windows claim it. `label` is the product's own name where
+    its bridge says one; `focused`, whether one of those windows is the frontmost app's."""
     out = {}
     for _entry, ping in pings:
         if not _claim(ping.get("folders") or [], spellings):
@@ -705,9 +674,7 @@ def editor_state(sha, root, branch, ide=None) -> dict:
     say both without asking again. Read with git here, not from the windows: a badge that
     polls must not cost a window a round of git calls every few seconds.
 
-    `ide` "idea" asks all of it of IntelliJ's windows instead, in tips that name IntelliJ.
-    Whichever is asked, `ides` lists every editor with a window on the checkout
-    (`connected_ides`): the page offers a choice between those and no others."""
+    `ides` lists every editor with a window on the checkout (`connected_ides`)."""
     every = _pings()
     app = wanted_ide(ide) or "vscode"
     pings = [(e, p) for e, p in every if app_of(p) == app]
@@ -741,10 +708,9 @@ def editor_state(sha, root, branch, ide=None) -> dict:
     folder = Path(root).name if root else "this checkout"
     open_here = f"Click to open a new {ed} in {folder}"
     if not pings:
-        what = ("plugin installed in IntelliJ" if app == "idea"
-                else "extension (victor-rentea.human-review) installed")
         return {"state": "off", "window": None, **facts,
-                "tip": f"{open_here}\nNo {ed} window answers: is the Human Review {what}?"}
+                "tip": f"{open_here}\nNo {ed} window answers: is the Human Review "
+                       "extension (victor-rentea.human-review) installed?"}
     holder, claim = None, 0
     for _entry, ping in pings:
         c = _claim(ping.get("folders") or [], (root, real))
@@ -796,24 +762,10 @@ def focus_window(entry) -> bool:
         return False
 
 
-def _launch(folder, app="vscode") -> None:
+def _launch(folder) -> None:
     """`open -a`, not `code`: without VSCODE_IPC_HOOK_CLI the CLI can start a second VS Code
-    instead of a window in the running one. IntelliJ takes a folder the same way, as a
-    project — the one it has open already if it has, a new one if not."""
-    desktop.launch_editor(folder, app)
-
-
-#: The application `open -a` starts for each editor.
-LAUNCH_AS = {"vscode": "Visual Studio Code", "idea": "IntelliJ IDEA"}
-
-
-def _launch_in(app, folder) -> None:
-    """`_launch`, with the editor named only when it is not VS Code — the call a request
-    with no `ide` makes is the one it always made."""
-    if app == "vscode":
-        _launch(folder)
-    else:
-        _launch(folder, app)
+    instead of a window in the running one."""
+    desktop.launch_editor(folder)
 
 
 def open_editor(root: Path, app="vscode") -> dict:
@@ -824,9 +776,7 @@ def open_editor(root: Path, app="vscode") -> dict:
     `root` — so a window opened on ~/workspace, or on a multi-root workspace holding the
     checkout, got a duplicate beside it. The bridge knows which window it is and raises it.
     A bridge from before it allowed that gets `open -a` on the folder *it* reports, the one
-    spelling VS Code matches to that window. Nothing in git is touched either way.
-
-    `app` "idea": the same of IntelliJ — its plugin takes the same focus command."""
+    spelling VS Code matches to that window. Nothing in git is touched either way."""
     root = Path(root)
     for candidate in dict.fromkeys((root, root.resolve())):
         for entry, info in windows_of(app, candidate):
@@ -835,9 +785,9 @@ def open_editor(root: Path, app="vscode") -> dict:
                 return {"how": "focused", "window": name}
             folders = info.get("folders") or []
             if len(folders) == 1 and folders[0].get("path"):
-                _launch_in(app, folders[0]["path"])
+                _launch(folders[0]["path"])
                 return {"how": "focused", "window": name}
-    _launch_in(app, root)
+    _launch(root)
     return {"how": "opened", "window": None}
 
 
@@ -868,8 +818,7 @@ def reveal_folder(spelt: Path, target: Path, app="vscode") -> dict | None:
     folders, and a window opened through a symlink holds the other one.
 
     `revealed`, or `focused` when the window's bridge is too old to take a uri (it still
-    comes forward); None when no window has the checkout. `app` "idea" asks IntelliJ's
-    Project view, through the same command id its plugin answers to."""
+    comes forward); None when no window has the checkout."""
     for candidate in dict.fromkeys((spelt, target)):
         for entry, info in windows_of(app, candidate):
             name = info.get("folder") or candidate.name
@@ -887,181 +836,6 @@ def reveal_folder(spelt: Path, target: Path, app="vscode") -> dict | None:
             if focus_window(entry):
                 return {"how": "focused", "window": name}
     return None
-
-
-#: The data source the Running DB link writes, one per checkout: re-pressed, it is updated
-#: in place (a new Start means a new port), never duplicated.
-DB_SOURCE_NAME = "Running DB (human-review)"
-
-
-def db_jdbc_url(facts: dict) -> str | None:
-    """The JDBC URL the Running DB row shows: the host's `JDBC_URL`, with the login added as
-    `?user=…&password=…` — the form pgjdbc reads, and one string a reader can paste."""
-    url = (facts or {}).get("JDBC_URL") or ""
-    if not re.fullmatch(r"jdbc:[a-z0-9]+://(localhost|127\.0\.0\.1):[0-9]{1,5}/[\w.-]+"
-                        r"(\?[\w.%=&-]*)?", url):
-        return None
-    extra = [(k, facts[v]) for k, v in (("user", "DB_USER"), ("password", "DB_PASSWORD"))
-             if facts.get(v) and f"{k}=" not in url]
-    if extra:
-        url += ("&" if "?" in url else "?") + urllib.parse.urlencode(extra)
-    return url
-
-
-def last_db_facts() -> dict | None:
-    """What the newest finished `demo-env-db` run printed, or None."""
-    with RUNS_LOCK:
-        for run in reversed(RUNS.values()):
-            if run.action == "demo-env-db" and run.state == "done":
-                return dict(run.result)
-    return None
-
-
-def _upsert_source(path: Path, component: dict, uid: str, name: str, tags) -> None:
-    """Replace the `<data-source uuid=uid>` of one IntelliJ storage file with `tags`
-    (`[(tag, text), …]`), keeping every other data source and attribute as they were."""
-    import xml.etree.ElementTree as ET
-    try:
-        tree = ET.parse(path)
-        project = tree.getroot()
-    except (OSError, ET.ParseError):
-        project = ET.Element("project", version="4")
-        tree = ET.ElementTree(project)
-    comp = project.find(f"component[@name='{component['name']}']")
-    if comp is None:
-        comp = ET.SubElement(project, "component", **component)
-    for old in comp.findall(f"data-source[@uuid='{uid}']"):
-        comp.remove(old)
-    attrs = {"source": "LOCAL"} if "format" in component else {}
-    ds = ET.SubElement(comp, "data-source", **attrs, name=name, uuid=uid)
-    for tag, text in tags:
-        ET.SubElement(ds, tag).text = text
-    ET.indent(tree, space="  ")
-    tree.write(path, encoding="UTF-8", xml_declaration=True)
-
-
-def write_data_source(root: Path, url: str) -> Path:
-    """Upsert `DB_SOURCE_NAME` into the checkout's IntelliJ project, as IntelliJ itself
-    stores one: the shared half in `.idea/dataSources.xml`, the per-machine half in
-    `.idea/dataSources.local.xml` (`LocalDataSourceSerialization` splits them that way).
-    Its uuid is derived from the checkout, so a second press updates it.
-
-    Connection type *URL only* (`configured-by-url`) and authentication *No auth*
-    (`auth-provider` `no-auth`): "the JDBC URL that you enter is used as is, including the
-    database credentials" (JetBrains, PostgreSQL data source docs). With the default
-    *User & Password* and its fields empty, IntelliJ prompts for a login on connect
-    instead of letting the driver take the one in the URL (Victor, 27 Oct 2026)."""
-    import uuid
-    idea = Path(root) / ".idea"
-    idea.mkdir(exist_ok=True)
-    uid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"human-review:running-db:{Path(root).resolve()}"))
-    driver = url.split(":", 2)[1]
-    # The local half first: when IntelliJ reloads, the shared file names a data source
-    # whose local settings are already there.
-    _upsert_source(idea / "dataSources.local.xml", {"name": "dataSourceStorageLocal"},
-                   uid, DB_SOURCE_NAME, [("auth-provider", "no-auth")])
-    shared = idea / "dataSources.xml"
-    _upsert_source(shared, {"name": "DataSourceManagerImpl", "format": "xml",
-                            "multifile-model": "true"}, uid, DB_SOURCE_NAME,
-                   [("driver-ref", driver), ("synchronize", "true"),
-                    ("configured-by-url", "true"),
-                    *([("jdbc-driver", "org.postgresql.Driver")] if driver == "postgresql"
-                      else []),
-                    ("jdbc-url", url), ("working-dir", "$ProjectFileDir$")])
-    return shared
-
-
-def open_db_in_idea(root: Path, url: str) -> dict | None:
-    """Write the data source and ask the IntelliJ window that has `root` to show it
-    (`humanReview.openDatabase`, the plugin's bridge). None when no IntelliJ window has the
-    checkout open; `{"how": "focused"}` from a plugin too old to know the command."""
-    for candidate in dict.fromkeys((Path(root), Path(root).resolve())):
-        for entry, info in windows_of("idea", candidate):
-            target = write_data_source(candidate, url)
-            query = urllib.parse.urlencode({"id": "humanReview.openDatabase",
-                                            "uri": target.as_uri()})
-            try:
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{entry['port']}/command?{query}", method="POST",
-                    data=b"", headers={"x-relay-token": entry["token"]})
-                ok = json.loads(urllib.request.urlopen(req, timeout=10).read() or b"{}").get("ok")
-            except Exception:
-                ok = False
-            if ok:
-                return {"how": "opened", "window": info.get("folder") or candidate.name,
-                        "dataSources": str(target)}
-            if focus_window(entry):
-                return {"how": "focused", "window": info.get("folder") or candidate.name,
-                        "dataSources": str(target)}
-    return None
-
-
-#: Said for a plugin that answers `/open-pr` as a route it does not know (404, no `error`).
-PR_PLUGIN_TOO_OLD = ("The Human Review plugin in IntelliJ is too old to open PRs — "
-                     "update it to 0.3.5 or later")
-
-
-def open_pr_in_idea(root: Path, url: str) -> tuple[dict | None, str | None]:
-    """Show pull request `url` selected in the GitHub "Pull Requests" tool window of the
-    IntelliJ window that has `root`, and raise it (`/open-pr`, the plugin's bridge). Both
-    spellings of the checkout, as `open_db_in_idea` tries them.
-
-    `(answer, None)` when it did; `(None, sentence)` when the window answered no — its own
-    sentence (GitHub plugin off, project not connected to that repository, no such PR…), or
-    `PR_PLUGIN_TOO_OLD`; `(None, None)` when no IntelliJ window has the checkout open."""
-    silent = None
-    for candidate in dict.fromkeys((Path(root), Path(root).resolve())):
-        for entry, info in windows_of("idea", candidate):
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{entry['port']}/open-pr", method="POST",
-                data=json.dumps({"url": url, "root": str(candidate)}).encode(),
-                headers={"x-relay-token": entry["token"], "Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(req, timeout=10) as r:
-                    status, raw = r.status, r.read()
-            except urllib.error.HTTPError as e:
-                status, raw = e.code, e.read()
-            except Exception:
-                silent = f"IntelliJ ({info.get('folder') or candidate.name}) did not answer"
-                continue
-            try:
-                said = json.loads(raw or b"{}")
-            except ValueError:
-                said = {}
-            said = said if isinstance(said, dict) else {}
-            if 200 <= status < 300 and said.get("ok"):
-                return {"how": "opened", "window": said.get("folder") or info.get("folder")
-                        or candidate.name, "number": said.get("number")}, None
-            if said.get("error"):
-                return None, str(said["error"])
-            if status == 404:
-                return None, PR_PLUGIN_TOO_OLD
-            return None, f"IntelliJ could not open the PR (HTTP {status})"
-    return None, silent
-
-
-#: How long a click that had to open the checkout in IntelliJ waits for that window's
-#: bridge to answer before giving up: a cold project open plus the plugin's start.
-IDEA_OPEN_WAIT_S = 180
-
-
-def launch_idea_for_db(root: Path, url: str, wait=IDEA_OPEN_WAIT_S, poll=2.0) -> dict:
-    """No IntelliJ window has `root`: open it there, then show the Database view once its
-    bridge answers — in the background, so the click gets its answer now. The data source
-    is written first, so the project IntelliJ opens already holds it even if the wait runs
-    out (Victor, 29 Oct 2026: "open it there, then click again" was a chore the server can
-    do itself)."""
-    write_data_source(Path(root), url)
-    _launch_in("idea", root)
-
-    def finish():
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline:
-            time.sleep(poll)
-            if open_db_in_idea(Path(root), url) is not None:
-                return
-    threading.Thread(target=finish, daemon=True).start()
-    return {"how": "launching", "window": Path(root).name}
 
 
 def reveal_in_finder(path: Path) -> None:
@@ -1404,8 +1178,6 @@ def bridge_diff(target: Path, sha: str, line: int, app="vscode", head: str | Non
     a sha and this side has already resolved one, so the two ends cannot disagree about
     what `origin/main` meant between one click and the next.
 
-    False, too, from an IntelliJ that does not do diffs yet (its /open-diff answers 501).
-
     `head`: a commit's own diff — `sha` its parent, `head` the commit — which the bridge
     opens as that commit's every file, landing on `target` at `line`. A bridge from before
     `head` shows `sha` against the working tree instead, which still holds the change."""
@@ -1452,11 +1224,6 @@ def open_diff(rel, base, served_root, line=None, app="vscode", head=None):
     left pane keeps its syntax highlighting — and so the editor tab reads
     `packages@cb0988f5.puml ↔ packages.puml`, which says what is being compared.
 
-    `app` "idea" (`pick_ide`): IntelliJ's bridge first, as for VS Code, and where it cannot
-    show the diff — its M1 answers /open-diff with 501 — the file at the line, in IntelliJ.
-    Never `code --diff`: the reader chose the other editor, and a diff popping up in VS Code
-    is not what they asked for.
-
     `head` (a Fixed card's fix commit, Victor 30 Oct 2026): the commit's own diff, `base`
     its parent — the bridge opens every file of the commit, landing on this one; `code
     --diff` gets this file at `base` and at `head`. Never the working tree on the right."""
@@ -1502,11 +1269,6 @@ def open_diff(rel, base, served_root, line=None, app="vscode", head=None):
     # Not for an added file: the bridge reads the left side out of git, where there is none.
     if line and (head_sha or not added) and bridge_diff(target, sha, line, app, head_sha):
         return None
-    if app != "vscode":
-        if target.is_file():
-            open_in_editor(target, line or 1, app=app)
-            return None
-        return f"{Path(rel).name} is no longer in the working tree"
     if head_sha:
         # The commit's side too, beside the parent's, so `code --diff` shows the commit.
         hs = head_sha[:8]
@@ -2708,7 +2470,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Handler.last_seen = time.time()
         route = self.path.split("?")[0]
         if route not in (RUN, RERUN, RERUN_AI, EDITOR_OPEN, REVEAL, REVEAL_FOLDER, STOP,
-                         OPEN_DB, OPEN_PR, OPEN_BRUNO):
+                         OPEN_BRUNO):
             self.reply_text("no", 404)
             return
         problem = refuse_reason(self.headers)
@@ -2750,8 +2512,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             # `how` says which it was — the page words its toast on it — and the prompt
             # the page then offers comes from the poll, which already holds those facts.
-            # `ide` in the body picks the editor; the press is about the chosen one, never
-            # a fallback to the other — "open IntelliJ" must not open VS Code.
+            # `ide` in the body names the editor the press is about (`IDES`).
             ide = wanted_ide(_field(raw, "ide"))
             if ide is None:
                 self.reply_json({"opened": str(ROOT), **(open_editor(Path(ROOT)) or {})})
@@ -2770,32 +2531,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             reveal_in_finder(target)
             self.reply_json({"revealed": str(target)})
-            return
-        if route == OPEN_DB:
-            url = db_jdbc_url(last_db_facts() or {})
-            if ROOT is None or url is None:
-                self.reply_text("No running database known yet: start the app first", 409)
-                return
-            done = open_db_in_idea(Path(ROOT), url) or launch_idea_for_db(Path(ROOT), url)
-            self.reply_json({"url": url, **done})
-            return
-        if route == OPEN_PR:
-            # IntelliJ only: VS Code's *in VS Code* is the extension's own URI, which the page
-            # hands the OS after `EDITOR_OPEN` has raised the window. Nothing is launched here.
-            # A pull request's own URL, nothing after its number (the forge's `pull_root`).
-            url = _field(raw, "url")
-            if not isinstance(url, str) or pull_root(url) != url:
-                self.reply_text("that is not a pull request's URL", 400)
-                return
-            if ROOT is None or not Path(ROOT).is_dir():
-                self.reply_text("this page was not served from a checkout", 404)
-                return
-            done, why = open_pr_in_idea(Path(ROOT), url)
-            if done is None:
-                self.reply_text(why or f"No IntelliJ window has {ROOT} open: press the red "
-                                "IntelliJ logo in the header to connect it, then click again", 409)
-                return
-            self.reply_json(done)
             return
         if route == OPEN_BRUNO:
             # The page names the request; what is written is a `.bru` built from it here,
@@ -2961,10 +2696,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                              # And a Structure box into its folder in VS Code: absent from
                              # an older server, so its boxes keep their github.com links.
                              "revealFolder": ROOT is not None,
-                             # And the Running DB link into IntelliJ's Database view.
-                             "openDb": ROOT is not None,
-                             # And the PR line's *in IntelliJ* into its Pull Requests view.
-                             "openPr": ROOT is not None,
                              # And a request arrow's Bruno button into Bruno itself; without
                              # it the button copies the request as cURL.
                              "openBruno": bruno_app() is not None,
@@ -3114,9 +2845,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     target.resolve().relative_to(ROOT.resolve())
                 except ValueError:
                     ok = False
-            # The reader's IDE (`ide`), when the page sent one: decided once, here, on the
-            # windows that own the file — the other editor when only it does — and then every
-            # step below speaks to that editor alone. Not sent: VS Code, as it always was.
+            # The reader's IDE (`ide`), when the page sent one: decided once, here, and then
+            # every step below speaks to that editor alone. Not sent: VS Code, as always.
             ide = wanted_ide(q.get("ide", [""])[0])
             app, fell = pick_ide(ide, target, target.resolve()) if ok and ide else ("vscode", False)
             via = {"app": app} if ide else {}
@@ -3366,19 +3096,17 @@ VSC_OPENER = Path(os.environ.get("HUMAN_REVIEW_VSC_OPENER",
 
 def open_in_ide(url: str, root, app: str = "vscode") -> bool:
     """Show `url` inside the editor window that has `root` open — beside the code, not on
-    another desktop — through that window's bridge (`/open-url`): VS Code's Simple Browser,
-    or IntelliJ's Human Review tool window. `root` is any path inside the checkout (the
-    served `.human-review` will do): windows are ranked by the folder that contains it, and
-    IntelliJ — one bridge for every project window — is told it too, to pick the project.
-    False when no window owning it takes it; an IntelliJ without an embedded browser answers
-    501, which is a no like any other, and the caller opens the OS browser."""
+    another desktop — through that window's bridge (`/open-url`): VS Code's Simple Browser.
+    `root` is any path inside the checkout (the served `.human-review` will do): windows are
+    ranked by the folder that contains it. False when no window owning it takes it, and the
+    caller opens the OS browser."""
     if not root:
         return False
     for entry, _info in windows_of(app, Path(root)):
         try:
             req = urllib.request.Request(
                 f"http://127.0.0.1:{entry['port']}/open-url", method="POST",
-                data=json.dumps({"url": url, **({"root": str(root)} if app == "idea" else {})}).encode(),
+                data=json.dumps({"url": url}).encode(),
                 headers={"x-relay-token": entry["token"], "Content-Type": "application/json"})
             if json.loads(urllib.request.urlopen(req, timeout=5).read() or b"{}").get("ok"):
                 return True
@@ -3394,13 +3122,10 @@ def open_in_vscode(url: str, root) -> bool:
 
 def terminal_ide(env=None) -> str | None:
     """The editor whose integrated terminal this server was started from, if any: VS Code
-    says so in `TERM_PROGRAM`/`VSCODE_IPC_HOOK_CLI`, IntelliJ in `TERMINAL_EMULATOR`
-    (`JetBrains-JediTerm`, set by its terminal plugin's LocalOptionsConfigurer)."""
+    says so in `TERM_PROGRAM`/`VSCODE_IPC_HOOK_CLI`."""
     env = os.environ if env is None else env
     if env.get("TERM_PROGRAM") == "vscode" or "VSCODE_IPC_HOOK_CLI" in env:
         return "vscode"
-    if env.get("TERMINAL_EMULATOR") == "JetBrains-JediTerm":
-        return "idea"
     return None
 
 
@@ -3410,8 +3135,7 @@ def open_page(url: str, root=None) -> None:
     Only on a *new* server: a rebuild reaches a tab that is already open by itself (the
     page reloads when the build stops writing), so opening again on every refresh would
     pile up one tab per iteration. Inside VS Code the page goes into the window's own
-    browser, beside the code; inside IntelliJ, into its Human Review tool window; anywhere
-    else — or an IntelliJ with no embedded browser — into the default browser. It is an http
+    browser, beside the code; anywhere else into the default browser. It is an http
     URL either way — never `open review.html`, which hands a file to whatever owns `.html`."""
     ide = terminal_ide()
     if ide and open_in_ide(url, root, ide):

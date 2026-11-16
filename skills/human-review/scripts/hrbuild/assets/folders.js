@@ -5,9 +5,8 @@
 // link to that folder at the reviewed commit. That link is the whole story off disk and
 // on the published demo. Served, the click is better spent in the editor the reader
 // already has open: the server finds the VS Code window that has this checkout, shows the
-// folder selected in its Explorer and raises it — or IntelliJ's, in its Project view, when
-// that is the IDE picked in the masthead (`HR.ide`, editor.js). The path goes over relative, and the
-// server refuses anything that is not a folder inside its own checkout.
+// folder selected in its Explorer and raises it (`HR.ide`, editor.js). The path goes over
+// relative, and the server refuses anything that is not a folder inside its own checkout.
 //
 // Like every served control here it starts as the static page and rises when the probe
 // answers — and only when the probe says `revealFolder`, because a server started before
@@ -58,7 +57,7 @@
             var ed = window.HR.ideName ? window.HR.ideName(j.ide) : 'VS Code';
             flash(j.how === 'revealed'
               ? 'Showing ' + name + ' in ' + ed + (j.window ? ' (' + j.window + ')' : '')
-              : ed + ' is in front, but its Human Review ' + (j.ide === 'idea' ? 'plugin' : 'extension')
+              : ed + ' is in front, but its Human Review extension'
                 + ' is too old to reveal a folder: update it and Reload Window');
           });
         }).catch(function () { flash('the review server is no longer running'); });

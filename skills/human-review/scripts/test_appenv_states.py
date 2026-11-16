@@ -303,7 +303,7 @@ def _db_page(served: bool, live: bool) -> str:
     stub = """<script>
 window.ASKED = []; window.COPIED = [];
 window.HR = {onready: fn => setTimeout(fn, 0), can: () => %s,
-             caps: () => ({openDb: true, token: 't'}),
+             caps: () => ({token: 't'}),
              run: id => (window.ASKED.push(id), Promise.resolve(
                id === 'demo-env-db' ? {state: 'done', result: %s}
                                     : {state: 'done', result: {}})),
@@ -338,8 +338,6 @@ def test_served_and_live_the_db_shows_its_jdbc_url_with_the_login_after_stop(row
     row.page.click(".appenv-jdbc-copy")
     assert row.page.evaluate("window.COPIED") == [url]
     assert row.page.text_content(".appenv-jdbc-copy") == "Copied \u2713"
-    # Served by a server that can, the URL itself is the way into IntelliJ.
-    assert row.page.get_attribute(".appenv-jdbc", "role") == "button"
 
 
 def test_the_database_row_is_hidden_offline_and_off_disk(row):

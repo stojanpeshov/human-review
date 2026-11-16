@@ -58,7 +58,7 @@
   }
 
   // Through the page's one way to source (`HR.openCode`, editor.js), never `location.href`:
-  // the reader may have picked IntelliJ, or no IDE at all.
+  // the reader may have disconnected the IDE.
   function openSource(href) {
     if (href) window.HR.openCode(href);
   }
@@ -118,8 +118,8 @@
     // A click inside the panel is not a click outside it, so it does not close it — said in
     // the closing listener (`outside`, below) rather than by stopping the click here: the
     // handler link's click has to reach editor.js's listener on `document`, which opens it
-    // in the picked IDE. Stopped here, it fell through to its bare `vscode://` href and
-    // opened VS Code with IntelliJ picked (Victor, 29 Oct 2026).
+    // in the IDE, or copies it. Stopped here, it fell through to its bare `vscode://` href
+    // and opened VS Code with another IDE picked (Victor, 29 Oct 2026).
     enableDrag(panel, panel.querySelector('.genseq-head'));
     return held;
   }
@@ -641,7 +641,7 @@
 
   // The generator ends a label that opens a method in the editor with `↗`. The label is
   // already a link, so the glyph goes and nothing replaces it (Victor, 20 Oct 2026: "no
-  // IntelliJ icon there, just a hyperlink is enough").
+  // IDE icon there, just a hyperlink is enough").
   var IDE_GLYPH = /\s*↗\s*$/;
 
   // The last text node of `text`, so a label split into tspans keeps its other runs.

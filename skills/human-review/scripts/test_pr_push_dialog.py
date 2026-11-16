@@ -50,7 +50,7 @@ def page_html(answers: dict, editor: bool = False) -> str:
       window.alert = function () { __alerts++; };
       window.open = function (u) { __opened.push(u); };
       window.__answers = %s;
-      window.HR = {onready: function (f) { f({token: 't', openPr: true}); },
+      window.HR = {onready: function (f) { f({token: 't'}); },
         can: function () { return true; },
         keepPlace: function () {},
         run: function (id) { __runs.push(id); return Promise.resolve(__answers[id]); }};
@@ -219,19 +219,18 @@ def test_everything_posted_reads_published_as_grey_text_that_does_nothing(browse
     assert page.locator("a.pr-vsc").get_attribute("href").endswith("uri=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F51")
 
 
-@pytest.mark.parametrize("pick", ["vscode", "idea"])
-def test_in_the_picked_ide_opens_the_pr_there(browser, pick):
-    """Served, through editor.js — the one script that hands the browser an editor URL.
-    VS Code: POST /__editor_open__ first (the window on this checkout comes forward), then
-    the extension's URI. IntelliJ: the link says so, and POST /__open_pr__ with the PR asks
-    the plugin to show it in IntelliJ's Pull Requests tool window; nothing navigates."""
+def test_in_vs_code_opens_the_pr_there(browser):
+    """Served, through editor.js — the one script that hands the browser an editor URL:
+    POST /__editor_open__ first (the window on this checkout comes forward), then the
+    extension's URI."""
+    pick = "vscode"
     page = open_page(browser, {}, {"pr-comments.json": PAYLOAD_TEXT,
                                    "pr-comments.posted.json": record(sha=_sha(PAYLOAD_TEXT))},
                      pick=pick)
     went = []
     cdp = page.context.new_cdp_session(page)
     cdp.on("Page.frameRequestedNavigation",
-           lambda e: went.append(e["url"]) if e["url"].startswith(("vscode:", "jetbrains:")) else None)
+           lambda e: went.append(e["url"]) if e["url"].startswith("vscode:") else None)
     cdp.send("Page.enable")
     asked = []
 
@@ -241,24 +240,16 @@ def test_in_the_picked_ide_opens_the_pr_there(browser, pick):
             r.fulfill(body=json.dumps(said), content_type="application/json")
         return fulfil
     page.route("http://127.0.0.1:9/__editor_open__", answer({"how": "focused", "window": "petclinic"}))
-    page.route("http://127.0.0.1:9/__open_pr__",
-               answer({"how": "opened", "window": "petclinic", "number": 51}))
     page.wait_for_selector("a.pr-vsc:not([hidden])")
     a = page.locator("a.pr-vsc")
-    assert a.locator(".ide-word").text_content() == ("IntelliJ" if pick == "idea" else "VS Code")
+    assert a.locator(".ide-word").text_content() == "VS Code"
     assert a.get_attribute("data-hr-pr").endswith("uri=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F51")
-    assert a.get_attribute("href") == (
-        "jetbrains://idea/human-review/open-pr?url=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F51"
-        "&root=%2Fr%2Fpetclinic" if pick == "idea" else a.get_attribute("data-hr-pr"))
+    assert a.get_attribute("href") == a.get_attribute("data-hr-pr")
     assert "GitHub Pull Requests view" in a.get_attribute("data-tip")
     page.click("a.pr-vsc")
     page.wait_for_timeout(500)
-    if pick == "idea":
-        assert asked == [("/__open_pr__", '{"url":"https://github.com/o/r/pull/51"}')], asked
-        assert went == []
-    else:
-        assert asked == [("/__editor_open__", "{}")], "the checkout's window first"
-        assert went == [a.get_attribute("data-hr-pr")], went
+    assert asked == [("/__editor_open__", "{}")], "the checkout's window first"
+    assert went == [a.get_attribute("data-hr-pr")], went
     page.close()
 
 

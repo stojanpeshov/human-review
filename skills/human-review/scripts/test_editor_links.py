@@ -1,9 +1,9 @@
 """Every link to source code goes through ONE mechanism: an `<a href="vscode://file/…">` whose
-click editor.js takes on `document` and sends to the IDE picked in the masthead (`hr-ide`) —
-the server with `ide=`, IntelliJ's `jetbrains://` off disk, or a copied `path:line` with none
-connected. A script that opens code some other way opens VS Code whatever the pick.
+click editor.js takes on `document` and sends where the masthead's VS Code switch (`hr-ide`)
+says — the server with `ide=`, VS Code's own handler, or a copied `path:line` when it is
+disconnected. A script that opens code some other way opens VS Code whatever the switch.
 
-Victor, 29 Oct 2026: IntelliJ picked, and the Sequence tab's statement panel opened
+Victor, 29 Oct 2026: another IDE picked, and the Sequence tab's statement panel opened
 `NotificationController.visitBooked()` in VS Code. The panel kept its clicks to itself
 (`stopPropagation`), so the handler link fell through to its bare `vscode://` href; and a
 diagram's scenario header set `location.href` itself. "It should never happen again" — so
@@ -26,8 +26,8 @@ ASSETS = HERE / "hrbuild" / "assets"
 MECHANISM = ASSETS / "editor.js"
 
 #: An editor URL in markup that is not a code link: the PR line's *in VS Code* (`a.pr-vsc`)
-#: is built with the GitHub Pull Requests extension's URI as its address. editor.js re-aims
-#: it at the picked IDE and takes its click (`aimPr`, `openPr`), as it does a code link's.
+#: is built with the GitHub Pull Requests extension's URI as its address. editor.js keeps
+#: that address and takes its click (`aimPr`, `openPr`), as it does a code link's.
 NOT_CODE_HREF = ("vscode://github.vscode-pull-request-github/",)
 
 NAVIGATES = re.compile(r"\blocation\.href\s*=(?!=)|\blocation\.(?:assign|replace)\s*\(|\bwindow\.open\s*\(")
@@ -38,7 +38,7 @@ def page_sources() -> list[Path]:
     """Everything that ends up as script or markup on a page: the assets, the build package,
     and every producer next to it (the includeHtml fragments: API, Data model, Structure, UX,
     Complexity, CODEOWNERS…). Not the server (`serve-review.py`): it opens files through the
-    OS, which is where IntelliJ's `idea://` belongs."""
+    OS."""
     out = sorted(ASSETS.rglob("*.js")) + sorted((HERE / "hrbuild").rglob("*.py"))
     out += [p for p in sorted(HERE.glob("*.py"))
             if not p.name.startswith(("test_", "conftest")) and p.name != "serve-review.py"]
@@ -61,9 +61,9 @@ def bypasses_in_script(text: str, allow_mechanism: bool = False) -> list[str]:
 
 def test_no_script_but_the_mechanism_navigates_or_names_another_ide():
     """`location.href = …`, `window.open(…)` and friends are how a link skips the pick: the
-    mechanism (editor.js) is the one script that may hand the browser an editor URL, and the
-    one that knows IntelliJ's. Anything else opening code calls `HR.openCode(href)`, or
-    clicks a real `vscode://file/` anchor."""
+    mechanism (editor.js) is the one script that may hand the browser an editor URL. No
+    script names another IDE's scheme. Anything else opening code calls `HR.openCode(href)`,
+    or clicks a real `vscode://file/` anchor."""
     found = {}
     for path in page_sources():
         bad = bypasses_in_script(path.read_text(encoding="utf-8"), allow_mechanism=path == MECHANISM)
@@ -184,7 +184,7 @@ def test_the_rule_catches_what_it_is_for():
     assert ok == [] and code == 3
 
 
-# ── at runtime: the Sequence panel, with each IDE picked ────────────────────────────
+# ── at runtime: the Sequence panel, with VS Code connected ──────────────────────────
 
 @pytest.fixture(scope="module")
 def browser():
@@ -222,9 +222,6 @@ def _page(build):
 
 
 PR = "https://github.com/o/r/pull/51"
-#: …and the IntelliJ plugin's link to it, off disk: the PR, and the checkout to find it in.
-IJ_PR = ("jetbrains://idea/human-review/open-pr?url=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F51"
-         "&root=%2Fr")
 #: The PR line's link: its href, and the IDE its face names.
 PR_FACE = """() => { const a = document.querySelector('a.pr-vsc');
   return [a.getAttribute('href'), a.querySelector('.ide-word').textContent]; }"""
@@ -238,38 +235,34 @@ HREFS = """() => {
 }"""
 
 
-def test_the_hrefs_follow_a_change_of_pick(browser, tmp_path):
-    """IntelliJ, then none, then VS Code, pressed on the masthead's logos: every code link's
-    href is re-aimed at each press, the panel's handler drawn later included."""
+def test_the_hrefs_stay_vs_codes_whichever_way_the_switch_is(browser, tmp_path):
+    """Connected, disconnected, connected again on the masthead's logo: every code link's
+    href stays its `vscode://file/` address, the panel's handler drawn later included, and
+    the PR line's word follows the switch."""
     from test_action_server import build
     f = tmp_path / "review.html"
     f.write_text(_page(build), encoding="utf-8")
     page = browser.new_page()
-    page.add_init_script("localStorage.setItem('hr-ide', 'idea')")
+    page.add_init_script("localStorage.setItem('hr-ide', 'vscode')")
     try:
         page.goto(f.as_uri())
         page.click('a[href="genseq://booked"] text')
         seen, pr = [page.evaluate(HREFS)], [page.evaluate(PR_FACE)]
-        page.click("#hr-ide-idea")                  # green: disconnect
+        page.click("#hr-ide-vscode")                # green: disconnect
         seen.append(page.evaluate(HREFS)), pr.append(page.evaluate(PR_FACE))
-        page.click("#hr-ide-vscode")                # red: connect VS Code
-        seen.append(page.evaluate(HREFS)), pr.append(page.evaluate(PR_FACE))
-        page.click("#hr-ide-vscode")                # disconnect
-        page.click("#hr-ide-idea")                  # and IntelliJ again
+        page.click("#hr-ide-vscode")                # red: connect again
         seen.append(page.evaluate(HREFS)), pr.append(page.evaluate(PR_FACE))
     finally:
         page.close()
     lead = [{h.split(":", 1)[0] for h in s.values()} for s in seen]
-    assert lead == [{"jetbrains"}, {"vscode"}, {"vscode"}, {"jetbrains"}], seen
-    # The PR line's link too: IntelliJ's plugin and its name, else the extension's URI.
-    ij = [IJ_PR, "IntelliJ"]
+    assert lead == [{"vscode"}] * 3, seen
     vsc = build.vscode_pr_uri(PR)
-    assert pr == [ij, [vsc, "your IDE"], [vsc, "VS Code"], ij], pr
+    assert pr == [[vsc, "VS Code"], [vsc, "your IDE"], [vsc, "VS Code"]], pr
 
 
-@pytest.mark.parametrize("pick", ["idea", "vscode"])
 @pytest.mark.parametrize("served", [True, False], ids=["served", "off-disk"])
-def test_the_statement_panel_and_the_scenario_header_follow_the_picked_ide(browser, tmp_path, pick, served):
+def test_the_statement_panel_and_the_scenario_header_go_to_vs_code(browser, tmp_path, served):
+    pick = "vscode"
     from test_action_server import build
     went, sent = [], []
     ctx = browser.new_context()
@@ -314,29 +307,24 @@ def test_the_statement_panel_and_the_scenario_header_follow_the_picked_ide(brows
         ctx.close()
     opens = [s for s in sent if s.startswith("/__open__")]
     went = list(dict.fromkeys(went))
-    # What hover, middle-click and Copy Link Address see: the href itself names the pick.
-    scheme = "jetbrains://idea/human-review/" if pick == "idea" else "vscode://file/"
-    assert all(h.startswith(scheme) for h in hrefs.values()), hrefs
-    assert "NotificationController.java" in hrefs["handler"] and "line=21" in hrefs["handler"] \
-        if pick == "idea" else hrefs["handler"].endswith("NotificationController.java:21:1")
+    # What hover, middle-click and Copy Link Address see: the href itself names VS Code.
+    assert all(h.startswith("vscode://file/") for h in hrefs.values()), hrefs
+    assert hrefs["handler"].endswith("NotificationController.java:21:1")
     if served:
         assert went == [], f"served, nothing navigates to an editor: {went}"
         assert len(opens) == 2 and all(f"ide={pick}" in s for s in opens), opens
         assert "NotificationController.java" in opens[0] and "line=21" in opens[0]
         assert "BookTest.java" in opens[1] and "line=12" in opens[1]
     else:
-        scheme = "jetbrains://" if pick == "idea" else "vscode://"
-        assert len(went) == 2 and all(u.startswith(scheme) for u in went), went
+        assert len(went) == 2 and all(u.startswith("vscode://") for u in went), went
         assert "NotificationController.java" in went[0] and "BookTest.java" in went[1]
 
 
-@pytest.mark.parametrize("pick", ["idea", "vscode"])
 @pytest.mark.parametrize("served", [True, False], ids=["served", "off-disk"])
-def test_the_pr_link_opens_the_pr_in_the_picked_ide(browser, tmp_path, pick, served):
-    """The PR line's *in IntelliJ*: served, the server asks the plugin (`/__open_pr__`, the
-    PR's URL in the body) and nothing navigates; off disk, the plugin's own `open-pr` link.
-    *in VS Code*: served, the checkout's window first (`/__editor_open__`), then the
-    extension's URI — the one way it went before IntelliJ could open a PR."""
+def test_the_pr_link_opens_the_pr_in_vs_code(browser, tmp_path, served):
+    """The PR line's *in VS Code*: served, the checkout's window first (`/__editor_open__`),
+    then the extension's URI; off disk, the URI alone."""
+    pick = "vscode"
     from test_action_server import build
     went, sent = [], []
     ctx = browser.new_context()
@@ -358,10 +346,7 @@ def test_the_pr_link_opens_the_pr_in_the_picked_ide(browser, tmp_path, pick, ser
             sent.append((req.method, url.split("127.0.0.1:9", 1)[1], req.post_data,
                          req.headers.get("x-human-review-token")))
             if "/__human_review__" in url:
-                return route.fulfill(body='{"humanReview": 1, "token": "t", "openPr": true}',
-                                     content_type="application/json")
-            if "/__open_pr__" in url:
-                return route.fulfill(body='{"how": "opened", "window": "petclinic", "number": 51}',
+                return route.fulfill(body='{"humanReview": 1, "token": "t"}',
                                      content_type="application/json")
             if "/__editor_open__" in url:
                 return route.fulfill(body='{"how": "focused", "window": "petclinic"}',
@@ -377,18 +362,11 @@ def test_the_pr_link_opens_the_pr_in_the_picked_ide(browser, tmp_path, pick, ser
     try:
         page.click("a.pr-vsc")
         page.wait_for_timeout(500)
-        toast = page.locator("#copy-toast").text_content() if page.locator("#copy-toast").count() else ""
     finally:
         ctx.close()
     posts = [(path, data, token) for method, path, data, token in sent if method == "POST"]
     went = list(dict.fromkeys(went))
-    if pick == "idea" and served:
-        assert posts == [("/__open_pr__", json.dumps({"url": PR}).replace(" ", ""), "t")], posts
-        assert went == [], f"served, IntelliJ is asked through the server: {went}"
-        assert toast == "Opened PR #51 in IntelliJ \u2014 petclinic", toast
-    elif pick == "idea":
-        assert went == [IJ_PR], went
-    elif served:
+    if served:
         assert [p for p, _, _ in posts] == ["/__editor_open__"], posts
         assert went == [build.vscode_pr_uri(PR)], went
     else:

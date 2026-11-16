@@ -125,7 +125,7 @@ def test_a_test_that_declares_no_fixture_starts_empty_and_gets_no_dot(tmp_path):
     reg = fx.fixture_registry(repo(tmp_path))
     for k in ("e2e/src/owners.feature:5", "e2e/src/own.feature:5", "e2e/src/b.spec.ts:3"):
         assert k not in reg["tests"], k
-    assert set(reg) == {"seed", "colors", "palette", "tests"}, "no hollow or dashed marks"
+    assert set(reg) == {"seed", "colors", "palette", "tests", "data"}, "no hollow or dashed marks"
 
 
 def test_a_feature_tag_and_a_default_name_the_seed(tmp_path):
@@ -193,3 +193,105 @@ def test_the_script_words_the_tip_and_the_dot_opens_nothing():
     assert "hrOpenDataset" not in js and "click to view" not in js, "no dataset view to open"
     assert "MutationObserver" in js
     assert "fx-free" not in js and "fx-empty" not in js, "no dot is how a test says it starts empty"
+
+
+# ── pytest: the tests/data sets a Python test loads ─────────────────────────
+
+ROOT_CONFTEST = '''import pytest
+
+@pytest.fixture(autouse=True)
+def fake_api(monkeypatch):
+    def offer():
+        with open("tests/data/service_matrix.json") as f:
+            return f.read()
+    monkeypatch.setattr("x.offer", offer)
+'''
+
+ONBOARDING_CONFTEST = '''import pytest
+from tests.utils.load import load_data_from_csv
+
+@pytest.fixture
+def customers(aurora):
+    load_data_from_csv(aurora.session, 'tests/data/ML-1570/customer_fiscal_year.csv', X)
+    load_data_from_csv(aurora.session, 'tests/data/onboarding_update/customers.csv', Y)
+'''
+
+ONBOARDING_TESTS = '''import pytest
+from tests.utils.load import load_facts
+
+DEADLINES = Path('tests/data/facts/deviating_deadlines.json')
+
+
+def test_onboards(customers):
+    assert True
+
+
+def test_reads_the_deadlines():
+    assert DEADLINES.read_text()
+
+
+@pytest.mark.usefixtures("customers")
+class TestRegeneration:
+    def test_regenerates(self):
+        load_facts()
+
+    def helper(self):
+        pass
+
+
+def test_plain(fake_api):
+    assert True
+'''
+
+LOAD = '''def load_facts():
+    return open("tests/data/facts/activity_facts.csv").read()
+
+def load_data_from_csv(session, path, model):
+    pass
+'''
+
+
+def _py_repo(tmp_path):
+    files = {
+        "conftest.py": ROOT_CONFTEST,
+        "tests/features/onboarding/conftest.py": ONBOARDING_CONFTEST,
+        "tests/features/onboarding/test_onboarding.py": ONBOARDING_TESTS,
+        "tests/utils/load.py": LOAD,
+        "tests/data/service_matrix.json": "{}",
+        "tests/data/ML-1570/customer_fiscal_year.csv": "a",
+        "tests/data/onboarding_update/customers.csv": "a",
+        "tests/data/facts/deviating_deadlines.json": "{}",
+        "tests/data/facts/activity_facts.csv": "a",
+    }
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text)
+    return tmp_path, sorted(files)
+
+
+def test_a_pytest_test_wears_the_test_data_it_loads_beyond_the_shared_baseline(tmp_path):
+    root, files = _py_repo(tmp_path)
+    assert fx.py_data_roots(files) == ["tests/data"]
+    got = fx.pytest_data_by_test(root, tuple(files))
+    t = "tests/features/onboarding/test_onboarding.py"
+    assert got == {
+        f"{t}:7": "ML-1570 + onboarding_update",     # through the fixture it requests
+        f"{t}:11": "facts",                          # a module constant it names
+        f"{t}:17": "facts + ML-1570 + onboarding_update",  # usefixtures + a helper it calls
+    }, "test_plain reads only the autouse baseline (service_matrix): no dot"
+
+
+def test_the_registry_colours_and_labels_test_data(tmp_path):
+    root, files = _py_repo(tmp_path)
+    reg = fx.fixture_colors(root, files)
+    assert "ML-1570 + onboarding_update" in reg["colors"]
+    assert reg["data"] == ["ML-1570 + onboarding_update", "facts",
+                           "facts + ML-1570 + onboarding_update"]
+    js = (Path(fx.__file__).resolve().parent.parent / "assets" / "fixtures.js").read_text()
+    assert "'Test data: ' + name" in js
+
+
+def test_no_data_folder_no_scan(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_x.py").write_text("def test_x():\n    open('tests/data/a.json')\n")
+    assert fx.pytest_data_by_test(tmp_path, ("tests/test_x.py",)) == {}

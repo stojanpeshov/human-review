@@ -26,6 +26,17 @@ Feature; or Playwright's ``{tag: ...}``), a ``test.use({dbFixture: '<name>'})`` 
 
 Two fixtures named by one test is the one case left unsaid: not ours to pick.
 
+**pytest (Ludvig).** A Python service has no SQL fixtures: its tests load their rows from
+files under a ``tests/data/`` folder (``load_data_from_csv(session,
+'tests/data/onboarding_update/customers.csv', Customer)``). Each entry of that folder — a
+sub-folder, or a file on its own — is a dataset, named as it is spelt there (``ML-1570``,
+``onboarding_update``, ``customers``). A test's dot is the datasets the code it runs names:
+its own body, the pytest fixtures it requests (by parameter or ``usefixtures``, in its module
+or a ``conftest.py`` above it, transitively) and the project functions any of those call —
+minus the baseline every test in scope reads through autouse fixtures. Two datasets read
+together are one combination, ``ML-1570 + onboarding_update``, with a colour of its own.
+Read with ``ast``, never run.
+
 "The code the test runs" is, for a Cucumber scenario, the feature's tags and the step
 definitions its Background and its own steps match; for a Playwright test, its body, the
 file's hooks and helpers, and the local modules it imports (DSLs, page objects) — not
@@ -33,9 +44,11 @@ file's hooks and helpers, and the local modules it imports (DSLs, page objects) 
 """
 from __future__ import annotations
 
+import ast
+import functools
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .util import _git
 
@@ -92,13 +105,17 @@ def fixture_colors(root: Path, files: list[str] | None = None) -> dict:
         for k, v in (cfg.items() if isinstance(cfg, dict) else ()):
             if isinstance(v, str) and _FX_COLOUR.fullmatch(v.strip()):
                 chosen[str(k)] = v.strip()
+    for n in sorted(set(pytest_data_by_test(root, tuple(files)).values())):
+        if n not in names:
+            names.append(n)
     seed = chosen.pop("seed", None) or chosen.pop("default", None) or FIXTURE_SEED
     free = [c for c in FIXTURE_PALETTE if c.lower() not in {v.lower() for v in chosen.values()}]
     free = free or list(FIXTURE_PALETTE)
     colors = {n: chosen.get(n) or fixture_hue(n, free) for n in names}
     for n, c in chosen.items():
         colors.setdefault(n, c)
-    return {"seed": seed, "colors": colors, "palette": free}
+    return {"seed": seed, "colors": colors, "palette": free,
+            "data": sorted(set(pytest_data_by_test(root, tuple(files)).values()))}
 
 
 def _fx_strip_comments(src: str) -> str:
@@ -356,6 +373,177 @@ def _fx_scan(root: Path, files: list[str], known: set[str]) -> dict[str, str]:
     return out
 
 
+# --- pytest: the test data a Python test loads ----------------------------------------------
+
+#: A test-data folder: `data` or `fixtures` somewhere under a `tests` folder.
+_PY_DATA_DIR = re.compile(r"(?:^|/)tests?/(?:.*/)?(?:data|fixtures)$")
+_PY_TEST_FILE = re.compile(r"(?:^|/)(?:test_[^/]*|[^/]*_test|conftest)\.py$")
+
+
+def py_data_roots(files: list[str]) -> list[str]:
+    """The test-data folders of the checkout, outermost first, and only those."""
+    dirs = {str(PurePosixPath(f).parent.parent) for f in files if "/" in f}
+    dirs |= {str(PurePosixPath(f).parent) for f in files}
+    roots = sorted(d for d in dirs if _PY_DATA_DIR.search(d))
+    return [d for d in roots if not any(d.startswith(o + "/") for o in roots if o != d)]
+
+
+def _py_dataset(literal: str, roots: list[str]) -> str | None:
+    """The dataset a string names: the entry under a data root it points into."""
+    s = literal.replace("\\", "/").lstrip("./")
+    for r in roots:
+        i = s.find(r + "/")
+        if i == 0 or (i > 0 and s[i - 1] == "/"):
+            rest = s[i + len(r) + 1:].split("/")
+            if rest and rest[0]:
+                return rest[0] if len(rest) > 1 else PurePosixPath(rest[0]).stem
+    return None
+
+
+def _py_decorator_name(d: ast.expr) -> str:
+    d = d.func if isinstance(d, ast.Call) else d
+    parts = []
+    while isinstance(d, ast.Attribute):
+        parts.append(d.attr)
+        d = d.value
+    if isinstance(d, ast.Name):
+        parts.append(d.id)
+    return ".".join(reversed(parts))
+
+
+class _PyFunc:
+    __slots__ = ("name", "data", "calls", "params", "uses", "fixture", "autouse", "line",
+                 "names", "consts")
+
+    def __init__(self, node, roots, consts):
+        self.name, self.line, self.consts = node.name, node.lineno, consts
+        self.data, self.calls, self.uses, self.names = set(), set(), set(), set()
+        self.params = [a.arg for a in (*node.args.posonlyargs, *node.args.args,
+                                       *node.args.kwonlyargs) if a.arg not in ("self", "cls")]
+        self.fixture = self.autouse = False
+        for d in node.decorator_list:
+            name = _py_decorator_name(d)
+            if name.endswith("fixture"):
+                self.fixture = True
+                self.autouse = any(k.arg == "autouse" and isinstance(k.value, ast.Constant)
+                                   and k.value.value is True
+                                   for k in getattr(d, "keywords", ()))
+            elif name.endswith("usefixtures") and isinstance(d, ast.Call):
+                self.uses |= {a.value for a in d.args if isinstance(a, ast.Constant)
+                              and isinstance(a.value, str)}
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                ds = _py_dataset(sub.value, roots)
+                if ds:
+                    self.data.add(ds)
+            elif isinstance(sub, ast.Name) and sub.id in consts:
+                self.data.add(consts[sub.id])
+            elif isinstance(sub, ast.Call):
+                callee = sub.func
+                if isinstance(callee, ast.Name):
+                    self.calls.add(callee.id)
+                elif isinstance(callee, ast.Attribute) and isinstance(callee.value, ast.Name):
+                    self.calls.add(callee.attr)
+
+
+def _py_module(root: Path, rel: str, roots: list[str]):
+    """`(tests, fixtures, helpers)` of one Python file, or None."""
+    try:
+        tree = ast.parse((root / rel).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+        return None
+    tests, fixtures, helpers = [], {}, {}
+    # `DEADLINES = Path('tests/data/facts/x.json')`: a module constant a test names.
+    consts: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for sub in ast.walk(node.value):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    ds = _py_dataset(sub.value, roots)
+                    if ds:
+                        for tg in targets:
+                            if isinstance(tg, ast.Name):
+                                consts[tg.id] = ds
+    pending = [(n, None) for n in tree.body]
+    while pending:
+        node, cls = pending.pop(0)
+        if isinstance(node, ast.ClassDef):
+            pending += [(n, node) for n in node.body]
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            f = _PyFunc(node, roots, consts)
+            if cls is not None:
+                for d in cls.decorator_list:
+                    if _py_decorator_name(d).endswith("usefixtures") and isinstance(d, ast.Call):
+                        f.uses |= {a.value for a in d.args if isinstance(a, ast.Constant)
+                                   and isinstance(a.value, str)}
+            if f.fixture:
+                fixtures[f.name] = f
+            elif f.name.startswith("test") and (cls is None or cls.name.startswith("Test")):
+                tests.append(f)
+            else:
+                helpers.setdefault(f.name, f)
+    return tests, fixtures, helpers
+
+
+@functools.lru_cache(maxsize=8)
+def pytest_data_by_test(root: Path, files: tuple[str, ...]) -> dict[str, str]:
+    """``{"<file>:<def line>": dataset}`` for every pytest test that loads test data."""
+    roots = py_data_roots(list(files))
+    if not roots:
+        return {}
+    py = [f for f in files if f.endswith(".py") and "node_modules" not in f
+          and "/site-packages/" not in f and not f.startswith(".")]
+    mods = {f: m for f in py if (m := _py_module(Path(root), f, roots)) is not None}
+    # Project functions by name, for a call to a helper another module defines; a name two
+    # modules define is nobody's.
+    helpers: dict[str, _PyFunc | None] = {}
+    for f, (_, _, hs) in mods.items():
+        for n, h in hs.items():
+            helpers[n] = None if n in helpers else h
+    out: dict[str, str] = {}
+    for rel, (tests, own_fx, own_helpers) in mods.items():
+        if not tests or not _PY_TEST_FILE.search(rel):
+            continue
+        # Fixtures in scope: conftest.py from the root down to this folder, then the module.
+        scope: dict[str, _PyFunc] = {}
+        parts = PurePosixPath(rel).parent.parts
+        for i in range(len(parts) + 1):
+            conf = "/".join((*parts[:i], "conftest.py"))
+            if conf in mods:
+                scope.update(mods[conf][1])
+        scope.update(own_fx)
+        autouse = [f for f in scope.values() if f.autouse]
+
+        def reach(start: list[_PyFunc]) -> set[str]:
+            seen, data, todo = set(), set(), list(start)
+            while todo:
+                f = todo.pop()
+                if id(f) in seen:
+                    continue
+                seen.add(id(f))
+                data |= f.data
+                for p in (*f.params, *f.uses):
+                    if p in scope:
+                        todo.append(scope[p])
+                for c in f.calls:
+                    h = own_helpers.get(c) or helpers.get(c)
+                    if h is not None:
+                        todo.append(h)
+            return data
+
+        # What every test in scope reads through autouse fixtures is the baseline — the
+        # activities-backend root conftest fakes the Ludvig API from four files for all of
+        # them. A dot that said so on every row would say nothing; it names what a test
+        # loads beyond it.
+        baseline = reach(autouse)
+        for t in tests:
+            data = reach([t]) - baseline
+            if data:
+                out[f"{rel}:{t.line}"] = " + ".join(sorted(data, key=str.lower))
+    return out
+
+
 def fixtures_by_test(root: Path, files: list[str] | None = None) -> dict[str, str]:
     """``{"<repo-relative file>:<line>": fixture}`` — ``"seed"`` or a fixture's name —
     for every E2E test that starts on a dataset. Absent = it starts on an empty
@@ -363,7 +551,9 @@ def fixtures_by_test(root: Path, files: list[str] | None = None) -> dict[str, st
     root = Path(root)
     files = _fx_ls(root) if files is None else files
     known = set(fixture_colors(root, files)["colors"])
-    return {k: v for k, v in _fx_scan(root, files, known).items() if v}
+    found = {k: v for k, v in _fx_scan(root, files, known).items() if v}
+    found.update(pytest_data_by_test(root, tuple(files)))
+    return found
 
 
 def fixture_registry(root: Path) -> dict:
@@ -373,6 +563,7 @@ def fixture_registry(root: Path) -> dict:
     files = _fx_ls(root)
     reg = fixture_colors(root, files)
     reg["tests"] = {k: v for k, v in _fx_scan(root, files, set(reg["colors"])).items() if v}
+    reg["tests"].update(pytest_data_by_test(root, tuple(files)))
     return reg
 
 

@@ -313,7 +313,7 @@ EXPLAIN: dict[str, dict[str, object]] = {
             'Name colour = kind: E2E and API weigh most, they prove the feature, not one method.',
             'Click a sentence: lines to its tests (greyed = never runs); <b>▲ ▼</b> = more scrolled away.',
             '<b>− ✏️ +</b> before a total: deleted, edited, new; hover <b>−</b>: the deleted ones, in the IDE.',
-            'Dot: the DB fixture a test declares it starts on; grey = Default; none = empty DB.',
+            'Dot: the tests/data sets a pytest test loads beyond the shared ones; hover names them.',
         ],
     },
     'sequence': {

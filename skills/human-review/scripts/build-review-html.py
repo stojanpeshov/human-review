@@ -106,7 +106,15 @@ from hrbuild.shared.fixtures import (
     fixture_hue,
     fixture_registry,
     fixtures_by_test,
-    render_fixture_registry
+    render_fixture_registry,
+    _PY_DATA_DIR,
+    _PY_TEST_FILE,
+    _PyFunc,
+    _py_dataset,
+    _py_decorator_name,
+    _py_module,
+    py_data_roots,
+    pytest_data_by_test
 )
 from hrbuild.shared.commands import (
     CMD_COPY, CMD_PLAY, CMD_RUN, CMD_STOP, command_html, COPY_TIP, LOCAL_HINT, SKILL_REPO,
@@ -271,7 +279,7 @@ from hrbuild.tabs.sequence import (
     sequence_verdict_alarm, sequence_verdict_html, lost_note_html, _lost,
     AUTO_SNIPPETS, derived_snippets, GENSEQ_TAG, scenario_span, tagged_scenarios, _counted,
     _drew_nothing, _FEATURE_DECL, _FEATURE_STOP, _ref, _SKIP_LINE, _STRINGS,
-    _tagged_decl, _test_kind, _TS_DECL, _decl_names, _current_decl, undrawn_reason,
+    _tagged_decl, _test_kind, _TS_DECL, _PY_DECL, _decl_names, _current_decl, undrawn_reason,
     SEQ_SELECTION, SEQ_WHY, sequence_selection, _slug, picked_for, _why_chip,
     SEQ_ALSO, ledger_status,
     SEQ_TOUCHED, touched_via, _branch_changed, _direct_imports, _TS_IMPORT,

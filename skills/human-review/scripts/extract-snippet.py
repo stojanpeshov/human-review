@@ -416,7 +416,35 @@ def _closing_line(lines: list[str], start: int, end: int) -> int:
     while depth > 0 and end < limit:
         end += 1
         depth += _depth(lines[end - 1])
-    return end
+    return _python_block_end(lines, start, end, limit)
+
+
+#: A Python `def` / `async def` / `class` header line — the one whose indent its body is under.
+_PY_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?:async[ \t]+)?(?:def|class)[ \t]+\w")
+
+
+def _python_block_end(lines: list[str], start: int, end: int, limit: int) -> int:
+    """Past the end of a Python block the range opened, if it opened one.
+
+    Braces say nothing about Python: a test's `def test_x():` balances on its own line, so a
+    window that only counted brackets stopped on the header and showed a test without its
+    body. When the range holds a `def` or `class` header (signature brackets closed) whose
+    last line ends in `:`, the window runs on while the lines are indented deeper than it."""
+    if not lines[end - 1].split("#")[0].rstrip().endswith(":"):
+        return end
+    header = next((m for m in map(_PY_HEADER.match, lines[start - 1:end]) if m), None)
+    if header is None:
+        return end
+    own = len(header["indent"].expandtabs())
+    last = end
+    for n in range(end + 1, limit + 1):
+        s = lines[n - 1]
+        if not s.strip():
+            continue
+        if len(s) - len(s.lstrip()) <= own:
+            break
+        last = n
+    return last
 
 
 # The row that stands in for what was skipped between two spans. Deliberately not a

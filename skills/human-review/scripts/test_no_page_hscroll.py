@@ -114,7 +114,10 @@ def test_the_masthead_keeps_its_chips_on_one_row(width, scheme, tmp_path):
             measure = ("() => { const m = document.querySelector('.masthead');"
                        " const tops = [...m.querySelectorAll('.scopebar > *')]"
                        "   .map(c => Math.round(c.getBoundingClientRect().top));"
-                       " return [new Set(tops).size, Math.round(m.getBoundingClientRect().height),"
+                       # A row is a chip-height step, not a pixel of baseline wobble: an
+                       # emoji in one chip's text set it 1px higher under Linux's fonts.
+                       " const rows = tops.sort((a, b) => a - b).filter((t, i, a) => !i || t - a[i - 1] > 6).length;"
+                       " return [rows, Math.round(m.getBoundingClientRect().height),"
                        "   document.getElementById('hr-outside').hidden]; }")
             rows, closed, hidden = page.evaluate(measure)
             assert rows == 1, f"the scope bar wrapped to {rows} rows at {width}px"

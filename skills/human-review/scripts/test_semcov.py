@@ -1685,3 +1685,16 @@ def test_the_scripted_pairing_agrees_with_the_paid_run_on_the_demo_pr(tmp_path):
     assert a["recall"] >= 0.35, a
     # Most of the ticket is decided without a model.
     assert len(g["scripted"]["decided"]) > len(g["scripted"]["open"])
+
+
+def test_a_python_tests_body_is_read_whole(tmp_path):
+    """The window used to stop on the `def` line: the pairing read only the test's name."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_visit.py").write_text(
+        "import pytest\n\n\n@pytest.mark.genseq\ndef test_books_a_visit(client):\n"
+        "    visit = client.book()\n\n    assert visit.status == 'booked'\n\n\n"
+        "def test_next():\n    pass\n")
+    start, body = S.test_source(tmp_path, "tests/test_visit.py", 5)
+    assert start == 4, "from its marker"
+    assert body[-1] == "    assert visit.status == 'booked'"
+    assert not any("test_next" in ln for ln in body)

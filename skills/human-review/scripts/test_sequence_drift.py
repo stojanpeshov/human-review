@@ -132,3 +132,56 @@ def test_the_tab_shows_no_undrawn_group_for_a_test_that_only_moved(tmp_path, mon
     assert "no diagram yet" not in out
     # The moved test is recognised as the tagged one it is.
     assert out.count('data-why="tagged"') == 2
+
+
+# A pytest file as Ludvig writes one: `@pytest.mark.genseq` on two tests, one of them
+# parametrised and drawn (hr_genseq titles it `test_books[a]` and records the line of its
+# first decorator), the other never drawn.
+PYTEST = """import pytest
+
+
+@pytest.mark.genseq
+@pytest.mark.parametrize("kind", ["a"])
+def test_books(kind):
+    booking = book(kind)
+
+    assert booking.ok
+
+
+def test_plain():
+    assert True
+
+
+@pytest.mark.genseq
+async def test_cancels():
+    await cancel()
+"""
+
+
+def _pytest_repo(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_booking.py").write_text(PYTEST)
+    gen = tmp_path / "tests/generated"
+    gen.mkdir(parents=True)
+    (gen / "test_booking.py.test-books-a.genseq.puml").write_text(
+        "@startuml\ntitle [[src://tests/test_booking.py:4{Open the test} test_books[a]]]\n"
+        "actor Test\nparticipant Booking\nTest -> Booking: book\n@enduml\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    seq.genseq_by_test.cache_clear()
+    return tmp_path
+
+
+def test_a_pytest_marker_tags_its_test_for_tracing(tmp_path):
+    root = _pytest_repo(tmp_path)
+    assert seq.tagged_scenarios(root) == {"tests/test_booking.py": [6, 17]}
+    lines = PYTEST.splitlines()
+    assert seq.scenario_span(lines, 6, "py") == (4, 9), "from its markers to its last line"
+    assert seq.scenario_span(lines, 17, "py") == (16, 18)
+
+
+def test_a_drawn_pytest_test_is_not_also_listed_as_undrawn(tmp_path):
+    root = _pytest_repo(tmp_path)
+    drawn, undrawn = seq.derived_snippets(root)
+    assert [x["ref"] for x in drawn] == ["tests/test_booking.py:4-9"]
+    assert [x["ref"] for x in undrawn] == ["tests/test_booking.py:16-18"]

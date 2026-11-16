@@ -36,7 +36,11 @@
     d.style.setProperty('--fx', colour);
     return d;
   }
+  // A pytest test's dot names the files under tests/data it loads (`reg.data`), an E2E
+  // test's the DB fixture it declares.
+  var data = reg.data || [];
   function said(name) {
+    if (data.indexOf(name) >= 0) return 'Test data: ' + name;
     return 'DB Fixture: ' + (name === 'seed' ? 'Default' : name);
   }
 

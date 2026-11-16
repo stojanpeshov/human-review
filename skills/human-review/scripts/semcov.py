@@ -1294,7 +1294,8 @@ def gherkin_glue(root: Path, feature: str, body: list[str]) -> list[str]:
         # A decorator (`@then("…")`) opens nothing itself: the function under it does.
         opens = n
         while opens < min(len(lines), n + 5) and "{" not in re.sub(
-                r"""(['"`])(?:\\.|(?!\1).)*\1""", "", lines[opens - 1]):
+                r"""(['"`])(?:\\.|(?!\1).)*\1""", "", lines[opens - 1]) \
+                and not re.match(r"\s*(?:async\s+)?def\s", lines[opens - 1]):
             opens += 1
         end = _tests_tab()._snippet_module()._closing_line(lines, n, opens)
         block = lines[n - 1:min(end, n + STEP_BODY_MAX - 1)]

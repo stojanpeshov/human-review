@@ -59,3 +59,36 @@ def test_a_sql_dash_comment_is_skipped():
 
 def test_an_empty_slice_previews_as_an_empty_line():
     assert preview_line([]) == ""
+
+
+PY_TESTS = """import pytest
+
+
+@pytest.mark.genseq
+def test_books(
+    client,
+):
+    booking = client.book()
+
+    assert booking.ok
+    # done
+
+
+class TestCancel:
+    def test_cancels(self):
+        assert cancel()
+
+    def test_other(self):
+        pass
+""".splitlines()
+
+
+def test_a_python_def_is_followed_to_the_end_of_its_body():
+    """Braces balance on `def test_x():`, so counting them stopped on the header."""
+    closing = extract_snippet._closing_line
+    assert closing(PY_TESTS, 5, 5) == 11, "signature over lines, body, its last comment"
+    assert closing(PY_TESTS, 4, 4) == 4, "a decorator alone opens nothing"
+    assert closing(PY_TESTS, 15, 15) == 16, "a method ends at its sibling, not the class"
+    assert closing(PY_TESTS, 14, 14) == 19, "a class runs to its last method"
+    assert closing(["const a = {", "  b: 1,", "};"], 1, 1) == 3, "braces as before"
+    assert closing(["  case 1:", "    x();", "  case 2:"], 1, 1) == 1, "no def, no indent rule"

@@ -385,7 +385,7 @@ def _scenarios_drawn(puml_rel: str, test_rel: str, root: Path) -> list[tuple[int
 
 def _decl_names(lines: list[str], decl: int, kind: str) -> set[str]:
     """The names (squashed) of the scenario declared on 1-based line `decl`, if one is:
-    the Gherkin title or the Playwright title."""
+    the Gherkin title, the Playwright title or the pytest function's name."""
     i = decl - 1
     if not 0 <= i < len(lines):
         return set()
@@ -395,6 +395,9 @@ def _decl_names(lines: list[str], decl: int, kind: str) -> set[str]:
     if kind == "ts":
         m = _TS_DECL.match(lines[i]) and _STRINGS.search(" ".join(lines[i:i + 3]))
         return {_squash(m.group(0)[1:-1])} if m else set()
+    if kind == "py":
+        m = _PY_DECL.match(lines[i])
+        return {_squash(m["name"])} if m else set()
     return set()
 
 
@@ -407,7 +410,9 @@ def _current_decl(lines: list[str], kind: str, line: int, title: str) -> int:
     its tag's 37. So the line is checked against the title the diagram also recorded, and
     moved to the declaration that carries that title. A title that matches nothing — the
     scenario was renamed or deleted — keeps the recorded line: never dropped."""
-    want = {_squash(title), _squash(title.split(": ", 1)[-1])} - {""}
+    # A parametrised pytest test is titled `test_x[a-b]`; its declaration is `test_x`.
+    want = {_squash(title), _squash(title.split(": ", 1)[-1]),
+            _squash(title.split(": ", 1)[-1].split("[", 1)[0])} - {""}
     if not want or not lines or _decl_names(lines, line, kind) & want:
         return line
     hits = [n for n in range(1, len(lines) + 1) if _decl_names(lines, n, kind) & want]
@@ -629,22 +634,27 @@ def _unquoted_note(test_rel: str, root: Path) -> str:
 # a tag. So the build reads both: every scenario a diagram names, and every scenario tagged
 # for tracing that no diagram names, each quoted from its tag to its last line.
 
-#: A test asking for a sequence: the Gherkin tag or the Playwright tag
-#: (`{tag: [GENERATE_SEQUENCE_TAG]}` or the literal). Read on a line, then placed on the
+#: A test asking for a sequence: the Gherkin tag, the Playwright tag
+#: (`{tag: [GENERATE_SEQUENCE_TAG]}` or the literal) or the pytest marker the skill's
+#: `hr_genseq` plugin selects by (`@pytest.mark.genseq`). Read on a line, then placed on the
 #: scenario it belongs to — a line that belongs to no scenario (the constant's own
 #: declaration, an import, a comment) is dropped there, not here.
 GENSEQ_TAG = re.compile(r"^\s*@generate_sequence\b"
-                        r"|GENERATE_SEQUENCE_TAG|[\"']@generate_sequence[\"']")
+                        r"|GENERATE_SEQUENCE_TAG|[\"']@generate_sequence[\"']"
+                        r"|^\s*@pytest\.mark\.genseq\b")
 _FEATURE_DECL = re.compile(r"^\s*(?:Scenario(?: Outline| Template)?|Example)\s*:")
 _FEATURE_STOP = re.compile(r"^\s*(?:@|Scenario|Example\s*:|Rule\s*:|Background\s*:|Feature\s*:)")
 _TS_DECL = re.compile(r"^\s*(?:test|it)(?:\.\w+)?\s*\(")
+#: A pytest test or test class: the `def` (or `class`) a marker decorates.
+_PY_DECL = re.compile(r"^(?P<indent>\s*)(?:async\s+)?(?:def|class)\s+(?P<name>\w+)")
 _STRINGS = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`')
 
 
 def _test_kind(rel: str) -> str:
     low = rel.lower()
     return ("feature" if low.endswith(".feature")
-            else "ts" if low.endswith((".ts", ".tsx", ".js", ".mjs")) else "")
+            else "ts" if low.endswith((".ts", ".tsx", ".js", ".mjs"))
+            else "py" if low.endswith(".py") else "")
 
 
 def scenario_span(lines: list[str], decl: int, kind: str) -> tuple[int, int]:
@@ -653,7 +663,8 @@ def scenario_span(lines: list[str], decl: int, kind: str) -> tuple[int, int]:
     From its tag because the tag is why the picture exists: a quote opening below
     `@generate_sequence` quotes a test that looks untagged. A Gherkin scenario ends before
     the next scenario, tag or rule; a Playwright `test(…)` where its brackets close — counted over parentheses and braces together, so
-    a `{tag: […]}` options object on the second line does not end the test early."""
+    a `{tag: […]}` options object on the second line does not end the test early; a pytest
+    `def` (or class) where its indented body ends."""
     i = decl - 1
     lo = i
     while lo > 0 and lines[lo - 1].strip().startswith("@"):
@@ -665,6 +676,18 @@ def scenario_span(lines: list[str], decl: int, kind: str) -> tuple[int, int]:
                 break
             if lines[j].strip() and not lines[j].strip().startswith("#"):
                 hi = j
+        return lo + 1, hi + 1
+    if kind == "py":
+        m = _PY_DECL.match(lines[i]) if i < len(lines) else None
+        own = len(m["indent"]) if m else 0
+        hi = i
+        for j in range(i + 1, len(lines)):
+            s = lines[j]
+            if not s.strip():
+                continue
+            if len(s) - len(s.lstrip()) <= own:
+                break
+            hi = j
         return lo + 1, hi + 1
     depth, opened = 0, False
     for j in range(i, min(len(lines), i + 400)):
@@ -693,6 +716,12 @@ def _tagged_decl(lines: list[str], at: int, kind: str) -> int | None:
         for j in range(at, max(-1, at - 5), -1):
             if _TS_DECL.match(lines[j]):
                 return j + 1
+    if kind == "py":
+        # Down past the other decorators (one may span lines) to the `def` they decorate.
+        for j in range(at + 1, min(len(lines), at + 12)):
+            if _PY_DECL.match(lines[j]):
+                return j + 1
+        return None
     return None
 
 
@@ -700,7 +729,7 @@ def tagged_scenarios(root: Path) -> dict[str, list[int]]:
     """`{test: [declaration line, …]}` of every scenario tagged for tracing in the index."""
     found: dict[str, list[int]] = {}
     got = _git(root, "grep", "-n", "-I", "-E",
-               "@generate_sequence|GENERATE_SEQUENCE_TAG") or ""
+               r"@generate_sequence|GENERATE_SEQUENCE_TAG|pytest\.mark\.genseq") or ""
     hits: dict[str, list[int]] = {}
     for row in got.splitlines():
         rel, _, rest = row.partition(":")
@@ -1061,6 +1090,7 @@ def render_testpairs(block, dspec, manifest_rows, root: Path, out_dir: Path,
     def fixture_dot(test_rel: str, scenarios) -> str:
         if not fx:
             colours = fixture_colors(root)
+            fx["data"] = set(colours.get("data") or ())
             fx["colour"] = lambda n: (colours["seed"] if n == "seed"
                                       else colours["colors"].get(n, colours["seed"]))
             marks: dict[str, dict[int, str]] = {}
@@ -1093,7 +1123,8 @@ def render_testpairs(block, dspec, manifest_rows, root: Path, out_dir: Path,
         name = hits[0][0]
         if name is None:
             return ""                   # starts on an empty database: no dot
-        tip = "DB Fixture: " + ("Default" if name == "seed" else name)
+        tip = ("Test data: " + name if name in fx["data"]
+               else "DB Fixture: " + ("Default" if name == "seed" else name))
         return (f'<span class="fx-dot" role="img"'
                 f' aria-label="{html.escape(tip, quote=True)}"'
                 f' data-tip="{html.escape(tip, quote=True)}"'

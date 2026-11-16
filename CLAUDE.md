@@ -17,8 +17,10 @@ Decisions that hold on this branch:
 - **The review tool never pushes a Ludvig branch.** `preflight.py` reads CI (CircleCI
   commit statuses / check runs) for a commit that is already on the remote and calls an
   unpushed one unproven; `"ci": {"push": true}` is the only way to let it push.
-- **Kept:** the VS Code extension. **Postponed:** the IntelliJ plugin, Code City, the Demo
-  film and the UX audit — their tabs fade when they have nothing.
+- **Kept:** the VS Code extension, the one IDE the page opens code in. **Dropped:** the
+  IntelliJ plugin (`intellij-plugin/`, and IntelliJ as an IDE target of the page and server;
+  git history keeps it). **Postponed:** Code City and the Demo film — their tabs fade
+  when they have nothing. The UX audit runs on mitt-ludvig's front end (Fluent UI v9).
 
 Setup, configuration and what each tab shows at Ludvig: [`docs/ludvig.md`](docs/ludvig.md).
 

@@ -11,11 +11,11 @@ controls filling one of those roles that are **not** inside a DS component.
 
 Green is context. Red is the product.
 
-    ./ds-audit.py --base-new http://localhost:4300 --base-old http://localhost:4301 \
-                  --screen "Book a visit=pets/11/visits/add" \
-                  --screen "Edit a pet=pets/11/edit" \
-                  --label-new test-pr --label-old main \
-                  --source ../petclinic-frontend/src \
+    ./ds-audit.py --base-new http://localhost:5301 --base-old http://localhost:5302 \
+                  --screen "home=home" --screen "contacts=contacts" \
+                  --screen "Customer page=assignments/customers/1001/customer-page" \
+                  --ds-host "Button=button[data-testid=button]" \
+                  --label-new my-branch --label-old develop \
                   --assets assets -o assets/ds-audit.html --json assets/ds-audit.json
 
 Every screen of the app per run, not the two somebody guessed the branch touched: the
@@ -28,8 +28,12 @@ The JSON is the artefact; the picture is its rendering. An adversarial review ag
 reads `--json` and never has to OCR a PNG. Emit the stylesheet the fragment needs with
 `--css`, the same way `openapi-compat.py` and friends do.
 
-The one thing fixed with the design system is that a DS component marks its host with
-`data-ds="<name>"`. Nothing here depends on its class names or its DOM shape.
+A design-system component is known by its host element: Fluent UI v9's root class
+(`fui-Dropdown`, `FLUENT_CONTROLS`), a project wrapper's selector (`--ds-host`), or a
+`data-ds="<name>"` any component can carry. What is *not* the design system is known the
+same way: react-bootstrap's classes (`.btn`, `.form-select`) and react-select
+(`KIT_CONTROLS`). `run-steps.py` hands it the screens `react_routes.py` reads off the
+app's React Router modules.
 
 Requires: playwright (`pip install playwright && playwright install chromium`),
 Pillow and numpy for the pixel diff.
@@ -62,9 +66,97 @@ SCHEMA = "ds-audit/1"
 # audit, the DOM diff — is pure Python over this snapshot, which is what makes the whole
 # thing testable without a browser.
 
-SNAPSHOT_JS = r"""
-() => {
+# ── what the design system is, and what is not ──────────────────────────────────────
+#
+# Ludvig's design system is Fluent UI v9 (`@fluentui/react-components`), its own
+# `@lrfkonsult/mitt-ludvig-ui` and the wrappers in mitt-ludvig's `src/components`. Fluent
+# never writes a `data-ds`, but every control it renders carries a stable root class,
+# `fui-<Component>` — so that class is the marker, read here. The wrappers are named by
+# selector (`--ds-host NAME=SELECTOR`, `steps.dsaudit.ds-hosts`), and anything else can
+# still say `data-ds="<name>"` itself.
+
+#: The Fluent UI v9 components recognised as design-system hosts: (root class, the name a
+#: template writes, the roles it covers). Most specific first — a DatePicker's root is an
+#: Input's too, a ToggleButton's is a Button's. A component that covers no role (a Tab, a
+#: Link, a sortable header cell) still makes the native controls inside it its own; it is
+#: just not drawn as a control of its own. Root classes as `@fluentui/*`'s
+#: `<component>ClassNames.root` spell them (react-components 9.72).
+FLUENT_CONTROLS = (
+    ("fui-DatePicker", "DatePicker", ("input[type=date]",)),
+    ("fui-SearchBox", "SearchBox", ("input[type=search]",)),
+    ("fui-TagPickerControl", "TagPicker", ("select[multiple]",)),
+    ("fui-InfoButton", "InfoButton", ()),
+    ("fui-MenuButton", "MenuButton", ("menu",)),
+    ("fui-SplitButton", "SplitButton", ()),
+    ("fui-ToggleButton", "ToggleButton", ()),
+    ("fui-CompoundButton", "CompoundButton", ()),
+    ("fui-Button", "Button", ("button",)),
+    ("fui-Dropdown", "Dropdown", ("select",)),
+    ("fui-Combobox", "Combobox", ("select",)),
+    ("fui-Select", "Select", ()),
+    ("fui-SpinButton", "SpinButton", ("input[type=number]",)),
+    ("fui-Input", "Input", ("input[type=text]", "input[type=email]", "input[type=tel]",
+                            "input[type=password]", "input[type=url]")),
+    ("fui-Textarea", "Textarea", ("textarea",)),
+    ("fui-Checkbox", "Checkbox", ("input[type=checkbox]",)),
+    ("fui-Switch", "Switch", ("role=switch",)),
+    ("fui-RadioGroup", "RadioGroup", ("input[type=radio]",)),
+    ("fui-Radio", "Radio", ()),
+    ("fui-Slider", "Slider", ("input[type=range]",)),
+    ("fui-TabList", "TabList", ("tabs",)),
+    ("fui-Tab", "Tab", ()),
+    ("fui-Link", "Link", ()),
+    ("fui-Calendar", "Calendar", ()),
+    ("fui-AccordionHeader", "AccordionHeader", ()),
+    ("fui-DataGridHeaderCell", "DataGridHeaderCell", ()),
+    ("fui-TableHeaderCell", "TableHeaderCell", ()),
+    ("fui-BreadcrumbButton", "BreadcrumbButton", ()),
+    ("fui-InteractionTag", "InteractionTag", ()),
+    ("fui-Tag", "Tag", ()),
+    ("fui-NavCategoryItem", "NavCategoryItem", ()),
+    ("fui-NavSubItem", "NavSubItem", ()),
+    ("fui-NavItem", "NavItem", ()),
+    ("fui-Hamburger", "Hamburger", ()),
+    ("fui-Rating", "Rating", ()),
+    ("fui-SwatchPicker", "SwatchPicker", ()),
+)
+
+#: The controls the audit judges that are *not* the design system's, keyed on what the
+#: page records as `kit`: a react-bootstrap class on the control, or `react-select` (its
+#: input's `react-select-N-input` id). Each is (what to call it, the role it fills; None:
+#: the element's own — a `.form-control` is whatever input or textarea carries it).
+#: react-bootstrap is mitt-ludvig's legacy kit, so a `.btn` where Fluent's Button belongs
+#: is a gap; one wrapped by a design-system host (`src/components`' Button renders `.btn`)
+#: is that host's own. A kit control in a role nothing claims is `foreign`: a gap, with
+#: the reason, which is the difference between "0 gaps" and "never looked".
+KIT_CONTROLS = {
+    "dropdown-toggle": ("react-bootstrap dropdown", "menu"),
+    "btn-close": ("react-bootstrap close button", "button"),
+    "btn": ("react-bootstrap button", "button"),
+    "form-select": ("react-bootstrap select", "select"),
+    "form-control": ("react-bootstrap form control", None),
+    "form-check-input": ("react-bootstrap check", None),
+    "form-range": ("react-bootstrap range", "input[type=range]"),
+    "pagination": ("react-bootstrap pagination", "paginator"),
+    "nav-tabs": ("react-bootstrap tabs", "tabs"),
+    "nav-pills": ("react-bootstrap pills", "tabs"),
+    "react-select": ("react-select", "select"),
+}
+
+
+_SNAPSHOT_JS = r"""
+(opts) => {
   const MAX = 4000;
+  // `[name, selector]` pairs: the project's own wrappers (`--ds-host`), recognised as
+  // design-system components the way a `data-ds` host is.
+  const HOSTS = (opts && opts.hosts) || [];
+  // `[class, name]` in priority order: the root class Fluent UI v9 stamps on a control
+  // (`fui-Dropdown`) names the component; the most specific first, because a DatePicker's
+  // root also carries `fui-Input`.
+  const FLUENT = __FLUENT__;
+  // The legacy kits' classes (react-bootstrap) and react-select's input id: a control that
+  // is not the design system's, named by what it is.
+  const KIT_CLASS = __KIT_CLASSES__;
 
   const classesOf = (el) => Array.from(el.classList).sort();
 
@@ -80,7 +172,7 @@ SNAPSHOT_JS = r"""
 
   const isNative = (el) => {
     const t = el.tagName.toLowerCase();
-    if (t === 'select' || t === 'textarea') return true;
+    if (t === 'select' || t === 'textarea' || t === 'button') return true;
     if (t === 'input') {
       const ty = (el.getAttribute('type') || 'text').toLowerCase();
       return !['hidden', 'button', 'submit', 'reset', 'image'].includes(ty);
@@ -96,6 +188,11 @@ SNAPSHOT_JS = r"""
     // switches the audit off — which is the failure this whole role model guards against.
     if (t === 'select') return el.multiple ? 'select[multiple]' : 'select';
     if (t === 'textarea') return 'textarea';
+    if (t === 'button') {
+      // Fluent's Dropdown is a `<button role="combobox">`: the role is what it does.
+      const r = (el.getAttribute('role') || '').toLowerCase();
+      return r && r !== 'button' ? 'role=' + r : 'button';
+    }
     if (t === 'input') return 'input[type=' + (el.getAttribute('type') || 'text').toLowerCase() + ']';
     return 'role=' + (el.getAttribute('role') || '').toLowerCase();
   };
@@ -104,22 +201,47 @@ SNAPSHOT_JS = r"""
   // petclinic form with <input name="id"> answers `[object HTMLInputElement]`, and every
   // signature under it is garbage that matches nothing on the other side.
   const rawIdOf = (el) => el.getAttribute('id') || '';
-  // A component kit numbers its own ids — `mat-select-0`, `mat-input-3`, `cdk-overlay-1`.
-  // That is a counter, not a name: it shifts when one more select renders above, and on
-  // the page it read "#mat-select-0" where the reader needed "Items per page". It is
-  // still recorded (`id`), but it never anchors a signature, a selector or a label.
-  const AUTO_ID = /^(mat|cdk|mdc|ng|mat-mdc)-[\w-]*?\d+$/;
+  // A library numbers its own ids — React's `useId` (`_r_3_`, `«r3»`, `:r3:`), Fluent's
+  // `fui-r3` / `field-_r_3_`, react-select's `react-select-2-input`. That is a counter, not
+  // a name: it shifts when one more field renders above, and on the page it read like a
+  // name where the reader needed "Customer". It is still recorded (`id`), but it never
+  // anchors a signature or a selector.
+  const AUTO_ID = /^react-select-\d+-\w+$|^fui-r[0-9a-z]+$|(«r[0-9a-z]+»|_r_[0-9a-z]+_|:r[0-9a-z]+:)$/;
   const idOf = (el) => { const i = rawIdOf(el); return AUTO_ID.test(i) ? '' : i; };
-  // A component from a UI kit (Angular Material, CDK, PrimeNG, ng-zorro, Ionic, Shoelace)
-  // and the kit directive that has no element of its own: `matSort` on a <table>, its
-  // `mat-sort-header` cells. Which of them is a *control* is decided in Python
-  // (`KIT_CONTROLS`); here they are only recorded with a name and their kit ancestors.
-  const KIT_TAG = /^(mat|cdk|p|nz|ion|sl)-/;
+
+  // A design-system component's host: `[name, via, selector]`, or null. `data-ds` is the
+  // generic hook any component can carry; a configured wrapper selector and Fluent's root
+  // class are how the hosts of a design system that never wrote one are known.
+  const memo = new Map();
+  const matches = (el, sel) => { try { return el.matches(sel); } catch (e) { return false; } };
+  const dsOf = (el) => {
+    if (memo.has(el)) return memo.get(el);
+    let got = null;
+    const d = el.getAttribute('data-ds');
+    if (d) got = [d, 'data-ds', '[data-ds="' + d + '"]'];
+    for (let i = 0; !got && i < HOSTS.length; i++)
+      if (matches(el, HOSTS[i][1])) got = [HOSTS[i][0], 'wrapper', HOSTS[i][1]];
+    if (!got && el.classList && el.classList.length) {
+      for (let i = 0; i < FLUENT.length; i++)
+        if (el.classList.contains(FLUENT[i][0])) { got = [FLUENT[i][1], 'fluent', '.' + FLUENT[i][0]]; break; }
+    }
+    memo.set(el, got);
+    return got;
+  };
+  const dsHostOf = (el) => {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement)
+      if (dsOf(p)) return p;
+    return null;
+  };
+
+  // A control from a kit outside the design system. Which of them is a *control*, and
+  // what it is called, is decided in Python (`KIT_CONTROLS`); here they are only recorded
+  // with a name and their kit ancestors.
   const kitOf = (el) => {
-    const t = el.tagName.toLowerCase();
-    if (KIT_TAG.test(t)) return t;
-    if (el.classList.contains('mat-sort-header')) return 'mat-sort-header';
-    if (el.classList.contains('mat-sort')) return 'mat-sort';
+    if (/^react-select-\d+-input$/.test(el.getAttribute('id') || '')) return 'react-select';
+    if (!el.classList || !el.classList.length) return '';
+    for (let i = 0; i < KIT_CLASS.length; i++)
+      if (el.classList.contains(KIT_CLASS[i])) return KIT_CLASS[i];
     return '';
   };
   const kitHostsOf = (el) => {
@@ -134,30 +256,33 @@ SNAPSHOT_JS = r"""
   const labelOf = (el) => {
     const aria = el.getAttribute('aria-label');
     if (aria) return aria.trim();
-    // The accessible name a kit control actually carries: mat-paginator points its
-    // page-size select at "Items per page:" this way. The element's own parts (the
-    // select's current value, also listed) are not its name and are left out.
+    // The accessible name a control actually carries: a Fluent Field's label, or a
+    // paginator's page-size select pointed at "Items per page:". The element's own parts
+    // (the select's current value, also listed) are not its name and are left out.
     const by = (el.getAttribute('aria-labelledby') || '').split(/\s+/)
       .map((i) => i && document.getElementById(i))
       .filter((l) => l && !el.contains(l))
       .map((l) => l.textContent.trim()).filter(Boolean).join(' ');
     if (by) return by;
-    if (idOf(el)) {
-      const l = document.querySelector('label[for="' + CSS.escape(idOf(el)) + '"]');
+    // The raw id: a counter is no name, but a `<label for>` points at it all the same.
+    if (rawIdOf(el)) {
+      const l = document.querySelector('label[for="' + CSS.escape(rawIdOf(el)) + '"]');
       if (l) return l.textContent.trim();
     }
     const own = el.closest('label');
     if (own) return own.textContent.trim();
-    const group = el.closest('.form-group, .field, .form-field, [class*=field]');
+    const group = el.closest('.fui-Field, .form-group, .field, .form-field, [class*=field]');
     if (group) {
       const l = group.querySelector('label');
       if (l) return l.textContent.trim();
     }
     const ph = (el.getAttribute('placeholder') || '').trim();
     if (ph) return ph;
-    // A kit component with nothing pointing at it: a sort header is named by what it
-    // says ("Name"); a paginator says forty characters of counts, which is no name.
-    const said = kitOf(el) ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+    // A button or a component with nothing pointing at it is named by what it says
+    // ("Save"); a paginator says forty characters of counts, which is no name.
+    const t = el.tagName.toLowerCase();
+    const said = kitOf(el) || dsOf(el) || t === 'button'
+      ? el.textContent.replace(/\s+/g, ' ').trim() : '';
     return said.length <= 40 ? said : '';
   };
 
@@ -169,7 +294,7 @@ SNAPSHOT_JS = r"""
     let node = el;
     while (node && node !== document.body && node.nodeType === 1) {
       const t = node.tagName.toLowerCase();
-      const ds = node.getAttribute('data-ds');
+      const ds = (dsOf(node) || [null])[0];
       if (idOf(node)) { parts.unshift(t + '#' + idOf(node)); break; }
       const name = node.getAttribute('name');
       if (name) { parts.unshift(t + '[name=' + name + ']'); node = node.parentElement; continue; }
@@ -197,15 +322,15 @@ SNAPSHOT_JS = r"""
     if (idOf(el)) return '#' + CSS.escape(idOf(el));
     const name = el.getAttribute('name');
     if (name) return el.tagName.toLowerCase() + '[name="' + name + '"]';
-    const ds = el.getAttribute('data-ds');
-    if (ds) {
+    const host = dsOf(el);
+    if (host) {
       // A DS host almost never has an id, and its full path is unreadable in a table.
       // The control it wraps names it, and `:has()` turns that into a selector the
       // reader can paste straight into devtools.
       const inner = el.querySelector('[id],[name]');
       const anchor = inner && idOf(inner) ? ':has(#' + CSS.escape(idOf(inner)) + ')'
         : inner && inner.getAttribute('name') ? ':has([name="' + inner.getAttribute('name') + '"])' : '';
-      return '[data-ds="' + ds + '"]' + anchor;
+      return host[2] + anchor;
     }
     return sigOf(el);
   };
@@ -252,13 +377,14 @@ SNAPSHOT_JS = r"""
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') continue;
 
-    const dsHostEl = el.parentElement && el.parentElement.closest('[data-ds]');
+    const own = dsOf(el);
+    const dsHostEl = dsHostOf(el);
     // Text is the DOM's own answer to "did this change"; capped so a table does not
     // turn the snapshot into a copy of the page.
     const text = (el.children.length === 0 ? el.textContent : '').trim().slice(0, 120);
     // Only what can become a verdict carries its markup: every node of the page would
     // turn the snapshot into a second copy of the DOM.
-    const judged = isNative(el) || !!el.getAttribute('data-ds') || !!kitOf(el);
+    const judged = isNative(el) || !!own || !!kitOf(el);
 
     out.push({
       sig: sigOf(el),
@@ -270,13 +396,14 @@ SNAPSHOT_JS = r"""
       type: t === 'input' ? (el.getAttribute('type') || 'text').toLowerCase() : null,
       aria_role: el.getAttribute('role') || null,
       cls: classesOf(el),
-      ds: el.getAttribute('data-ds'),
+      ds: own ? own[0] : null,
+      ds_via: own ? own[1] : null,
       ds_covers: el.getAttribute('data-ds-covers'),
-      ds_host: dsHostEl ? dsHostEl.getAttribute('data-ds') : null,
+      ds_host: dsHostEl ? dsOf(dsHostEl)[0] : null,
       ds_host_sig: dsHostEl ? sigOf(dsHostEl) : null,
       native: isNative(el),
       role: isNative(el) ? roleOf(el) : null,
-      label: isNative(el) || el.getAttribute('data-ds') || kitOf(el) ? labelOf(el) : '',
+      label: isNative(el) || own || kitOf(el) ? labelOf(el) : '',
       kit: kitOf(el) || null,
       multiple: el.hasAttribute('multiple') || el.getAttribute('aria-multiselectable') === 'true',
       kit_hosts: isNative(el) || kitOf(el) ? kitHostsOf(el) : [],
@@ -298,6 +425,13 @@ SNAPSHOT_JS = r"""
   };
 }
 """
+
+#: The extractor with the two catalogues written into it. Evaluated with
+#: `{"hosts": [[name, selector], …]}` (the wrappers), or with nothing.
+SNAPSHOT_JS = (_SNAPSHOT_JS
+               .replace("__FLUENT__", json.dumps([[c, n] for c, n, _ in FLUENT_CONTROLS]))
+               .replace("__KIT_CLASSES__",
+                        json.dumps([k for k in KIT_CONTROLS if k != "react-select"])))
 
 # ── determinism ───────────────────────────────────────────────────────────────────
 #
@@ -381,6 +515,8 @@ FALLBACK_LEXICON = {
     "textarea": ["textarea"],
     "checkbox": ["input[type=checkbox]"],
     "radio": ["input[type=radio]"],
+    "button": ["button"],
+    "input": ["input[type=text]"],
 }
 
 # Tags a template scan is allowed to read a role off. Kept in step with `isNative` in
@@ -421,6 +557,10 @@ def derive_registry(snapshots: dict, source_roots: list[Path]) -> dict:
     Precedence, highest first:
 
     1. `data-ds-covers="select,input[type=date]"` — the component author said it out loud.
+       **catalogue** stands beside it: when the app renders Fluent UI v9 at all, every
+       component of `FLUENT_CONTROLS` covers its roles, rendered on these screens or not —
+       the design system is Fluent, and a `.btn` is a gap whether or not this run happened
+       to shoot a Fluent Button.
     2. **runtime** — the control a rendered DS host actually wraps. The component's own
        implementation is the honest answer to "what does it replace".
     3. **source** — the same reading, taken off the template, for a component that this
@@ -459,9 +599,14 @@ def derive_registry(snapshots: dict, source_roots: list[Path]) -> dict:
                     comp["seen_on"].append(side)
                 # The element a template writes to use it — `<app-combo>` — which is what
                 # a gap's rule names: "combo" is the audit's word, the tag is the author's.
+                # A recognised React component is written by its own name, `<Dropdown>`:
+                # its host element (a `<div>`) is not what anybody types.
+                via = n.get("ds_via") or "data-ds"
+                comp.setdefault("via", via)
+                tag = n["tag"] if via == "data-ds" else n["ds"]
                 tags = comp.setdefault("tags", [])
-                if n["tag"] not in tags:
-                    tags.append(n["tag"])
+                if tag not in tags:
+                    tags.append(tag)
 
     # 1 — declared
     for side, snap in snapshots.items():
@@ -471,14 +616,27 @@ def derive_registry(snapshots: dict, source_roots: list[Path]) -> dict:
                 if roles:
                     note(n["ds"], roles, "declared", f'data-ds-covers on {n["selector"]}')
 
+    # 1b — catalogue: the app renders Fluent, so Fluent is the design system
+    if any(n.get("ds_via") == "fluent" for snap in snapshots.values() for n in snap["nodes"]):
+        for _cls, name, roles in FLUENT_CONTROLS:
+            comp = components.setdefault(
+                name, {"ds": name, "roles": [], "provenance": "unknown", "detail": "",
+                       "seen_on": []})
+            comp.setdefault("via", "fluent")
+            comp.setdefault("tags", [name])
+            if roles and comp["provenance"] in ("unknown",):
+                note(name, roles, "catalogue", f"Fluent UI v9 {name}")
+
     # 2 — runtime
     for side, snap in snapshots.items():
         for n in snap["nodes"]:
             if not n.get("ds"):
                 continue
             comp = components.get(n["ds"], {})
-            if comp.get("provenance") == "declared":
+            if comp.get("provenance") in ("declared", "catalogue"):
                 continue
+            if n.get("ds_via") == "fluent":
+                continue               # Fluent's insides are its own; the catalogue says
             for inner in primary_control(n["sig"], n["ds"], snap["nodes"]):
                 note(n["ds"], [inner["role"]], f"runtime:{side}",
                      f'<{inner["tag"]}> inside {n["selector"]}')
@@ -493,9 +651,10 @@ def derive_registry(snapshots: dict, source_roots: list[Path]) -> dict:
             continue
         note(ds, found["roles"], "source", found["file"])
 
-    # 4 — lexicon
+    # 4 — lexicon. Never for a Fluent component: the catalogue is the whole answer there,
+    # and Fluent's `Select` or `Radio` covering nothing is a fact, not a gap to guess into.
     for ds, comp in components.items():
-        if comp["roles"]:
+        if comp["roles"] or comp.get("via") == "fluent":
             continue
         guess = FALLBACK_LEXICON.get(ds.lower())
         if guess:
@@ -569,43 +728,17 @@ def scan_sources(roots: list[Path]) -> dict:
 
 # ── the audit ─────────────────────────────────────────────────────────────────────
 
-# The UI-kit controls the audit judges, keyed on what the page records as `kit` (the tag,
-# or the class a kit directive puts on its host). Each is (what to call it, the role it
-# fills). A kit control is never the design system's component — that is a `data-ds`
-# host, whatever library it is built on — so it is judged either way: in a role the
-# registry covers it is the gap the role model exists to find; in a role the registry
-# does not know it is still a control from outside the design system, and saying so with
-# the reason is the difference between "0 gaps" and "never looked". `mat-sort-header` is
-# judged through its table (`mat-sort`), once per table, not once per column.
-KIT_CONTROLS = {
-    "mat-select": ("Angular Material select", "select"),
-    "mat-paginator": ("Angular Material paginator", "paginator"),
-    "mat-sort": ("Angular Material sort directive", "sortable table header"),
-    "mat-checkbox": ("Angular Material checkbox", "input[type=checkbox]"),
-    "mat-radio-button": ("Angular Material radio button", "input[type=radio]"),
-    "mat-slide-toggle": ("Angular Material slide toggle", "role=switch"),
-    "mat-slider": ("Angular Material slider", "input[type=range]"),
-    "mat-button-toggle-group": ("Angular Material button toggle", "toggle group"),
-    "mat-tab-group": ("Angular Material tabs", "tabs"),
-    "p-dropdown": ("PrimeNG dropdown", "select"),
-    "p-select": ("PrimeNG select", "select"),
-    "p-paginator": ("PrimeNG paginator", "paginator"),
-    "nz-select": ("ng-zorro select", "select"),
-    "nz-pagination": ("ng-zorro pagination", "paginator"),
-    "ion-select": ("Ionic select", "select"),
-    "sl-select": ("Shoelace select", "select"),
-}
-
-# The ids a component kit numbers itself. Kept in step with `AUTO_ID` in the page-side
+# The ids a library numbers itself. Kept in step with `AUTO_ID` in the page-side
 # extractor; here it decides what a row is *called* on a capture that predates it.
-AUTO_ID = re.compile(r"^(?:mat|cdk|mdc|ng|mat-mdc)-[\w-]*?\d+$")
+AUTO_ID = re.compile(
+    r"^(?:react-select-\d+-\w+|fui-r[0-9a-z]+|.*?(?:«r[0-9a-z]+»|_r_[0-9a-z]+_|:r[0-9a-z]+:))$")
 
 
 def effective_role(n: dict) -> str | None:
     """The role a control fills, which is not always the role its markup states.
 
     A `role="combobox"` on anything but a text input is the ARIA "select-only combobox":
-    `<mat-select>`, a PrimeNG dropdown, a div picker. It answers exactly the question a
+    Fluent's Dropdown (a `<button>`), a div picker. It answers exactly the question a
     `<select>` answers, so it is judged as one — reported as `role=combobox`, a role
     nothing claims, it walked past a registry whose combo covers `select`."""
     role = n.get("role")
@@ -615,15 +748,24 @@ def effective_role(n: dict) -> str | None:
 
 
 def _multiple(n: dict) -> bool:
-    """A multi-select, however the kit says so: the attribute, ARIA, or Material's own
-    `mat-mdc-select-multiple` class on a capture taken before `multiple` was recorded."""
-    return bool(n.get("multiple") or any(c.endswith("-select-multiple")
-                                         for c in n.get("cls") or []))
+    """A multi-select, however the control says so: the attribute or ARIA's
+    `aria-multiselectable`, both recorded as `multiple`."""
+    return bool(n.get("multiple"))
+
+
+def kit_role(n: dict) -> str | None:
+    """The role a kit control fills: the catalogue's, else the element's own (a
+    `.form-control` is a text field or a textarea, whichever carries it)."""
+    kit = KIT_CONTROLS.get(n.get("kit") or "")
+    if not kit:
+        return None
+    return kit[1] or effective_role(n)
 
 
 def element_name(f: dict) -> str:
     """What a reader calls the element: its accessible name, else its control name, else
-    an id a person wrote — never a kit's counter (`mat-select-0`) — else what it is."""
+    an id a person wrote — never a library's counter (`react-select-2-input`) — else what
+    it is."""
     el = f["element"]
     label = (el.get("label") or "").strip().rstrip(":").strip()
     if label:
@@ -638,7 +780,7 @@ def element_name(f: dict) -> str:
 
 def _kit_host(n: dict) -> str | None:
     """The nearest kit *control* this node sits inside: its machinery, not a control of
-    its own. The select inside a paginator is the paginator's page-size picker."""
+    its own. The select inside a pagination bar is its page-size picker."""
     for k in n.get("kit_hosts") or []:
         if k in KIT_CONTROLS:
             return k
@@ -648,8 +790,10 @@ def _kit_host(n: dict) -> str | None:
 def audit_side(snapshot: dict, registry: dict, side: str) -> list[dict]:
     """One side's verdicts. Three of them, and only two get drawn.
 
-    `ds` — a design-system host. Green, and it is context, not a finding.
-    `bare` — a native control in a covered role with no `[data-ds]` above it. Red.
+    `ds` — a design-system host that is a control (it covers a role). Green, and it is
+           context, not a finding. A host that covers no role — a Fluent Tab, a Link — is
+           not drawn; its own native controls are `internal`.
+    `bare` — a native control in a covered role with no design-system host above it. Red.
     `internal` — the same native control, but inside a DS host: that is the component's
                  own machinery and marking it would bury the one badge that matters.
     `uncovered` — a native control in a role no DS component claims. Recorded, never
@@ -658,11 +802,17 @@ def audit_side(snapshot: dict, registry: dict, side: str) -> list[dict]:
     covered = {r["role"]: r for r in registry["roles"]}
     claimed = ", ".join(f'<code>{r}</code>' for r in sorted(covered)) or "nothing"
     nodes = snapshot["nodes"]
+    roles_of = {c["ds"]: c.get("roles") for c in registry.get("components") or []}
     out = []
     for n in nodes:
         if n.get("ds"):
-            out.append(_finding(side, n, "ds", None,
-                                f'design-system component <b>{n["ds"]}</b>'))
+            if n.get("ds_via") in (None, "data-ds") or roles_of.get(n["ds"]):
+                out.append(_finding(side, n, "ds", None,
+                                    f'design-system component <b>{n["ds"]}</b>'))
+            elif n.get("native"):
+                out.append(_finding(side, n, "internal", None,
+                                    f'the design system’s <b>{n["ds"]}</b> — its own '
+                                    "control", role_name=effective_role(n)))
             continue
         kit = KIT_CONTROLS.get(n.get("kit") or "")
         host = _kit_host(n)
@@ -710,36 +860,30 @@ def _kit_finding(side, n, kit, covered, claimed, nodes) -> dict:
     """A UI-kit control: the design system's component if the registry names one for its
     role (then it is in the wrong library: a gap where that component belongs), else a
     control from outside the design system — `foreign`, a gap with its reason."""
-    what, kit_role = kit
-    if kit_role == "select" and _multiple(n):
-        what, kit_role = what.replace("select", "multi-select"), "select[multiple]"
-    tag = f'<code>&lt;{html.escape(n["tag"])}&gt;</code>'
-    if n.get("kit") == "mat-sort":
-        cols = [m.get("label") for m in nodes
-                if m.get("kit") == "mat-sort-header" and m.get("label")
-                and "mat-sort" in (m.get("kit_hosts") or [])]
-        if cols:
-            n = dict(n, label="matSort on " + ", ".join(cols))
-        tag = "<code>matSort</code>"
-    role = covered.get(kit_role)
+    what, role_name = kit[0], kit_role(n) or ""
+    if role_name == "select" and _multiple(n):
+        what, role_name = what.replace("select", "multi-select"), "select[multiple]"
+    tag = f'<code>{html.escape(kit_tag_text(n))}</code>'
+    a_what = _a(what)
+    a_what = a_what[0].lower() + a_what[1:]
+    role = covered.get(role_name)
     if role:
         owners = " or ".join(f"<b>{d}</b>" for d in role["covered_by"])
         return _finding(
             side, n, "bare", role,
-            f"not the design-system component — {tag}, an {what}, where {owners} "
+            f"not the design-system component — {tag}, {a_what}, where {owners} "
             "belongs")
-    inner = [m for m in nodes if _kit_host(m) == n.get("kit")
-             and KIT_CONTROLS.get(m.get("kit") or "", (None, None))[1] in covered]
+    inner = [m for m in nodes if _kit_host(m) == n.get("kit") and kit_role(m) in covered]
     parts = "".join(
         f'; its \u201c{html.escape(element_name({"element": m}))}\u201d control is a '
         f'<code>&lt;{html.escape(m["tag"])}&gt;</code>, not '
-        + " or ".join(f"<b>{d}</b>" for d in covered[KIT_CONTROLS[m["kit"]][1]]["covered_by"])
+        + " or ".join(f"<b>{d}</b>" for d in covered[kit_role(m)]["covered_by"])
         for m in inner)
     return _finding(
         side, n, "foreign", None,
-        f"not from the design system — {tag}, an {what}; the design system has no "
-        f"component for a <code>{html.escape(kit_role)}</code>{parts}",
-        role_name=kit_role)
+        f"not from the design system — {tag}, {a_what}; the design system has no "
+        f"component for a <code>{html.escape(role_name)}</code>{parts}",
+        role_name=role_name)
 
 
 def _finding(side: str, n: dict, verdict: str, role: dict | None, message: str,
@@ -753,7 +897,8 @@ def _finding(side: str, n: dict, verdict: str, role: dict | None, message: str,
         "ds": n.get("ds"),
         "element": {"tag": n["tag"], "id": n.get("id"), "name": n.get("name"),
                     "label": n.get("label") or "", "sig": n["sig"],
-                    **({"kit": n["kit"]} if n.get("kit") else {})},
+                    **({"kit": n["kit"]} if n.get("kit") else {}),
+                    **({"ds_via": n["ds_via"]} if n.get("ds_via") else {})},
         "selector": n["selector"],
         "box": n["box"],
         "message": message,
@@ -863,10 +1008,8 @@ def rule_html(f: dict, registry: dict, screen: str) -> str:
     the reason, spelled out for the one reader who does not already know what the design
     system offers or why it matters — the person who copied the older template."""
     el = f["element"]
-    tag = f'<code>&lt;{html.escape(el["tag"])}&gt;</code>'
+    tag = f'<code>{html.escape(kit_tag_text(el))}</code>'
     kit = KIT_CONTROLS.get(el.get("kit") or "")
-    if el.get("kit") == "mat-sort":
-        tag = "<code>matSort</code>"
     if f["verdict"] == "ds":
         return (f'The design system’s <b>{html.escape(f.get("ds") or "")}</b> component '
                 f'({_component_tag(f.get("ds") or "", registry)}) — the control this '
@@ -892,8 +1035,19 @@ def rule_html(f: dict, registry: dict, screen: str) -> str:
     return out
 
 
+def kit_tag_text(el: dict) -> str:
+    """The opening tag a reader looks for in the DOM: a kit control with the class that
+    makes it one (`<button class="btn">`), anything else bare (`<select>`)."""
+    kit = el.get("kit") or ""
+    if kit == "react-select":
+        return f'<{el["tag"]} id="react-select-\u2026">'
+    if kit in KIT_CONTROLS:
+        return f'<{el["tag"]} class="{kit}">'
+    return f'<{el["tag"]}>'
+
+
 def _a(noun: str) -> str:
-    """"An Angular Material select", "A PrimeNG dropdown" — the article a sentence needs."""
+    """"A react-bootstrap button", "An input" — the article a sentence needs."""
     plain = re.sub(r"<[^>]+>", "", noun)
     return ("An " if plain[:1].lower() in "aeiou" else "A ") + noun
 
@@ -1479,6 +1633,7 @@ details.dsa-screen > summary .dsa-sumtail { font-weight: 400; }
 .dsa-unlisted { color: var(--dsa-bad); border: 1px solid var(--dsa-bad); border-radius: 6px;
   padding: .45rem .7rem; margin: .4rem 0 .8rem; font-size: .9rem; }
 .dsa-unlisted code { color: inherit; }
+.dsa-notvisited { color: var(--muted, #6b7280); font-size: .85rem; margin: .2rem 0 .6rem; }
 /* One number per drawn verdict, on the picture and at the head of its row
    (`number_findings`). Inside a change frame the frame's own chip carries it; a mark
    outside every frame wears it the way a frame does, outside its top-left corner, in the
@@ -1844,11 +1999,11 @@ def short_selector(selector: str, keep: int = 2) -> str:
 def selector_html(selector: str) -> str:
     """A selector that may only wrap between its steps: `<wbr>` after each `>`, and the
     cell's CSS forbids any other break. Eval run 8's column cut `div#ownersTable>ta / ble.
-    mat-sort.tabl / e:1` — `word-break: break-all` splitting tokens wherever the column
-    ran out, which is unreadable for the one string a reader would search the code for.
+    tabl / e:1` — `word-break: break-all` splitting tokens wherever the column ran out,
+    which is unreadable for the one string a reader would search the code for.
     The whole path is in the tip."""
     # Each step is nowrap too: in normal wrapping a browser still breaks after a hyphen,
-    # and `mat-` / `mdc-paginator` is the same mid-token cut by another route.
+    # and `form-` / `select` is the same mid-token cut by another route.
     return "&gt;<wbr>".join(f'<span class="dsa-step">{html.escape(step)}</span>'
                             for step in selector.split(">"))
 
@@ -1858,7 +2013,7 @@ def frame_label(frame: dict, marks: list[dict]) -> str:
 
     An unlabelled purple box said "something here changed" and left the reader to work
     out what, and whether it was fine. The chip names the verdicts the frame holds —
-    `✗ matSort · ✗ Select page of owners — added` — or says there is nothing to judge."""
+    `✗ <button class="btn"> · ✗ pagination — added` — or says there is nothing to judge."""
     held = [m for m in marks if _centre_in(m["box"], frame)]
     names = list(dict.fromkeys(m.get("short") or m["badge"] for m in held))
     if not names:
@@ -1892,10 +2047,26 @@ def _tag_text(tag: str, name: str | None = None, ds: str | None = None) -> str:
 
     A component whose host is a custom element (`<app-combo>`) is named by its tag. One
     mounted on a plain element (`<div data-ds="combo">`) is not — `<div>` says nothing — so
-    it is written with its marker, and the field's name stays on the control inside it."""
+    it is written with its marker, and the field's name stays on the control inside it.
+    A React component (`Dropdown`, capitalised: a recognised Fluent or wrapper host) is
+    written the way a template writes it, `<Dropdown>`."""
+    if tag[:1].isupper():
+        return f'<{tag} name="{name}">' if name else f"<{tag}>"
     if ds and "-" not in tag:
         return f'<{tag} data-ds="{ds}">'
     return f'<{tag} name="{name}">' if name else f"<{tag}>"
+
+
+def _found_ds_text(el: dict, ds: str | None) -> str:
+    """A design-system host as it is in the DOM: its marker spelled out — the `data-ds`, the
+    Fluent root class — or, for a wrapper known by selector, the component it is."""
+    via = el.get("ds_via") or "data-ds"
+    if via == "fluent":
+        return f'<{el["tag"]} class="fui-{ds}">' if ds != "TagPicker" else \
+            f'<{el["tag"]} class="fui-TagPickerControl">'
+    if via == "wrapper":
+        return f"<{ds}>"
+    return _tag_text(el["tag"], el.get("name"), ds)
 
 
 def mark_tip_html(f: dict, registry: dict | None) -> str:
@@ -1910,8 +2081,12 @@ def mark_tip_html(f: dict, registry: dict | None) -> str:
     near-black in both schemes, so its colours are fixed, not the page's flipping tokens."""
     el, esc = f["element"], html.escape
     name = el.get("name")
-    found = ("matSort" if el.get("kit") == "mat-sort"
-             else _tag_text(el["tag"], name, f.get("ds") if f["verdict"] == "ds" else None))
+    if f["verdict"] == "ds":
+        found = _found_ds_text(el, f.get("ds"))
+    elif el.get("kit"):
+        found = kit_tag_text(el)
+    else:
+        found = _tag_text(el["tag"], name)
     kit = KIT_CONTROLS.get(el.get("kit") or "")
 
     def row(key: str, cls: str, value: str) -> str:
@@ -1969,11 +2144,11 @@ def _marks_for(findings, side, registry: dict | None = None):
                           "tip": _plain(f["message"]), "status": status,
                           "tip_html": mark_tip_html(f, registry)})
         elif f["verdict"] == "foreign":
-            # The kit's own name on the picture (`mat-paginator`, `matSort`): it says what
+            # The kit's own name on the picture (`pagination`, `react-select`): it says what
             # library the control came from, which is the finding. The accessible name is
             # in the table row, where there is room for both.
             kit = f["element"].get("kit") or f["element"]["tag"]
-            name = "matSort" if kit == "mat-sort" else kit
+            name = kit
             what = KIT_CONTROLS.get(kit, (name,))[0]
             marks.append({"id": f["id"], "cls": "bad", "box": f["box"],
                           "badge": f'✗ {age} {what} — the design system has none',
@@ -1991,7 +2166,7 @@ def _marks_for(findings, side, registry: dict | None = None):
                 expect = " or ".join(f["expected_ds"])
                 expect = f"the {expect} component" if expect else "a design-system component"
             plain = "" if f["element"].get("kit") else "plain "
-            head = f'✗ {age} {plain}<{f["element"]["tag"]}> — should be '
+            head = f'✗ {age} {plain}{kit_tag_text(f["element"])} — should be '
             marks.append({"id": f["id"], "cls": "bad", "box": f["box"],
                           "badge": head + expect,
                           # The wanted tag rides a green end of the red chip: the same
@@ -1999,7 +2174,7 @@ def _marks_for(findings, side, registry: dict | None = None):
                           "badge_html": html.escape(head) + (
                               f'<i class="dsa-want">{html.escape(expect)}</i>'
                               if all(tags) and tags else html.escape(expect)),
-                          "short": f'✗ <{f["element"]["tag"]}>',
+                          "short": f'✗ {kit_tag_text(f["element"])}',
                           "tip": _plain(f["message"]), "status": status,
                           "tip_html": mark_tip_html(f, registry)})
     return marks
@@ -2583,6 +2758,21 @@ def render(result: dict, assets_prefix: str) -> str:
         + (f' via <code>{html.escape(u["via"])}</code>' if u.get("via") else "")
         + ') changed and is not in <code>steps.dsaudit.screens</code>.</p>'
         for u in unlisted)
+    # Routes the catalogue could not reach — a `:param` nobody gave a value — said once,
+    # quietly: they are a gap in what was looked at, not in the branch. The red line above
+    # is for the ones this branch changed.
+    skipped = result.get("not_visited") or []
+    for reason, words in ((None, "with a parameter and no value in "
+                                 "<code>steps.dsaudit.screens</code>"),
+                          ("did not load", "that did not load on both sides")):
+        these = [u for u in skipped if u.get("reason") == reason]
+        if not these:
+            continue
+        shown = ", ".join(f'<code>{html.escape(u["route"])}</code>' for u in these[:6])
+        more = f" and {len(these) - 6} more" if len(these) > 6 else ""
+        unlisted_line += (
+            f'<p class="dsa-notvisited">Not visited: {_n(len(these), "route")} {words} '
+            f"\u2014 {shown}{more}.</p>")
     return (
         f'<!-- ds-audit render {RENDER_STAMP} -->'
         '<div class="dsa-run">'
@@ -2736,7 +2926,7 @@ def unreachable(wanted: list, label_new: str, label_old: str) -> list[str]:
 
 def capture(url: str, png: Path, *, viewport, epoch: int, seed: int, wait_for: str | None,
             settle_ms: int, mask: list[str], color_scheme: str,
-            launch: dict | None = None) -> dict:
+            launch: dict | None = None, hosts: list | None = None) -> dict:
     from playwright.sync_api import sync_playwright
 
     pin = PIN_JS.replace("__EPOCH__", str(epoch)).replace("__SEED__", str(seed))
@@ -2770,7 +2960,7 @@ def capture(url: str, png: Path, *, viewport, epoch: int, seed: int, wait_for: s
             previous = shot
             page.wait_for_timeout(settle_ms)
         png.write_bytes(previous)
-        snap = page.evaluate(SNAPSHOT_JS)
+        snap = page.evaluate(SNAPSHOT_JS, {"hosts": hosts or []})
         browser.close()
     snap["settled"] = identical
     snap["png"] = str(png)
@@ -2924,7 +3114,7 @@ def build_screen(name, old_snap, new_snap, registry, *, sides_meta, delta,
         elif was is None:
             f["severity"] = "high"
             # Not "new"/"added": the element's delta column says that, and an element the
-            # base already had (a <table> that gains matSort) reads "changed" there —
+            # base already had (a <ul> that gains a page-size select) reads "changed" there —
             # eval runs 14-18 flagged "changed" beside "new on this branch: added".
             f["history"] = ("brought in by this branch"
                             if f["verdict"] == "foreign" else
@@ -3045,6 +3235,14 @@ def main():
     ap.add_argument("--unlisted", action="append", default=[], metavar="COMPONENT=ROUTE[=VIA]",
                     help="a changed routed component no --screen reaches; rendered as a red "
                          "warning at the top and carried in the JSON as `unlisted`")
+    ap.add_argument("--not-visited", action="append", default=[], metavar="ROUTE[=COMPONENT]",
+                    help="a route the catalogue could not visit (a `:param` with no value); "
+                         "named in one quiet line and carried in the JSON as `not_visited`")
+    ap.add_argument("--ds-host", action="append", default=[], metavar="NAME=SELECTOR",
+                    help="an element matching SELECTOR is design-system component NAME, as "
+                         "if it carried data-ds=NAME — for a project's own wrappers "
+                         "(`Button=button[data-testid=button]`). Fluent UI v9 controls are "
+                         "recognised by their fui-* root class without this")
     # Defaulted from the environment so the two origins can be *exported* by whoever
     # started the builds rather than written down. They used to be two fixed ports in
     # `human-review.json` (:4300 / :4301), which is a promise about somebody else's
@@ -3163,6 +3361,7 @@ def main():
             routes[name] = _route_of(new_url)
 
     cap_dir = Path(args.from_capture) if args.from_capture else None
+    failed: list = []
     keep = Path(args.keep_capture) if args.keep_capture else None
     if keep:
         keep.mkdir(parents=True, exist_ok=True)
@@ -3181,9 +3380,15 @@ def main():
                  "or --from-capture")
 
     w, h = (int(x) for x in args.viewport.lower().split("x"))
+    hosts = []
+    for spec in args.ds_host:
+        name, sep, sel = spec.partition("=")
+        if not (sep and name.strip() and sel.strip()):
+            ap.error(f"--ds-host wants NAME=SELECTOR, got {spec!r}")
+        hosts.append([name.strip(), sel.strip()])
     common = dict(viewport=(w, h), epoch=args.epoch, seed=args.seed,
                   wait_for=args.wait_for, settle_ms=args.settle, mask=args.mask,
-                  color_scheme=args.color_scheme)
+                  color_scheme=args.color_scheme, hosts=hosts)
 
     down = [] if cap_dir else unreachable(wanted, args.label_new, args.label_old)
     if down:
@@ -3209,10 +3414,28 @@ def main():
             name, side, url = job
             print(f"[ds-audit] {name}: capturing {url}", file=sys.stderr, flush=True)
             png = assets / f"ds-audit-{slug(name)}-{side}.png"
-            return (name, side), capture_retrying(url, png, launch=primary["launch"], **common)
+            try:
+                return (name, side), capture_retrying(url, png, launch=primary["launch"],
+                                                      **common)
+            except Exception as e:  # one screen that never loads must not cost the audit
+                print(f"[ds-audit] {name}: {side} side did not load — "
+                      f"{str(e).splitlines()[0]}", file=sys.stderr, flush=True)
+                return (name, side), None
 
         with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
             shot = dict(pool.map(take, todo))
+        # A screen is compared or it is not: one whose either side never loaded (a route
+        # the mocked app cannot render, a `--wait-for` it never shows) is named among the
+        # screens not visited, with the reason, and the rest of the run goes on.
+        failed = [(name, new_url) for name, new_url, _ in wanted
+                  if shot.get((name, "new")) is None or shot.get((name, "old")) is None]
+        if failed:
+            wanted = [w for w in wanted if w[0] not in {n for n, _ in failed}]
+            unloaded = [{"route": routes.get(n) or _route_of(u) or n, "component": "",
+                         "reason": "did not load"} for n, u in failed]
+            if not wanted:
+                print("[ds-audit] no screen loaded on both sides", file=sys.stderr)
+                sys.exit(2)
 
     snaps, screens_io = {}, []
     for name, new_url, old_url in wanted:
@@ -3323,6 +3546,10 @@ def main():
                               b["id"] in (sc.get("browsers") or {}) for sc in screens)]
     result["unlisted"] = [dict(zip(("component", "route", "via"), u.split("=", 2)))
                           for u in args.unlisted]
+    result["not_visited"] = [dict(zip(("route", "component"), u.split("=", 1)))
+                             for u in args.not_visited]
+    if not cap_dir and failed:
+        result["not_visited"] += unloaded
     Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.json_out).write_text(json.dumps(result, indent=1), encoding="utf-8")
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

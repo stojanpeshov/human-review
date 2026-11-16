@@ -1,5 +1,5 @@
 {
-  "_comment": "human-review.json for a Ludvig Python/Serverless service (shaped on activities-backend). Copy it to the repository root as human-review.json and adjust. Every step not named here either needs nothing (logging, complexity, tests, owners) or is postponed in the Ludvig fork (video, city, dsaudit).",
+  "_comment": "human-review.json for a Ludvig Python/Serverless service (shaped on activities-backend). Copy it to the repository root as human-review.json and adjust. Every step not named here either needs nothing (logging, complexity, tests, owners) or is postponed in the Ludvig fork (video, city). `dsaudit` is for mitt-ludvig's front end: delete it in a back-end service.",
   "base": "origin/develop",
   "ci": {
     "_comment": "CircleCI reports to GitHub as commit statuses; name the job that proves the build. `Lint and Test` matches `[DEV] Lint and Test` on a feature branch and `[TEST] Lint and Test` on develop. Never pushes unless push is true.",
@@ -60,6 +60,37 @@
           "run": "HR_GENSEQ_SELECT={tests.pytest} pipenv run python -m pytest -p hr_genseq -q -p no:cacheprovider",
           "when": "pytest"
         }
+      ]
+    },
+    "dsaudit": {
+      "_comment": "mitt-ludvig only. The design-system audit: every screen of the app, base and branch side by side, controls outside Fluent UI v9 / mitt-ludvig-ui / src/components flagged. Screens are read off frontend/src/routes.tsx; `screens` gives a value to a route with a :param (a key that matches no route adds a screen, null drops one). Both sides are Vite dev servers with the API and login mocked, one per commit (the merge-base in a git worktree).",
+      "app": {
+        "up": "python3 {scripts}/vite-app.py up {sha}",
+        "down": "python3 {scripts}/vite-app.py down {sha}",
+        "url": "python3 {scripts}/vite-app.py url {sha}",
+        "env": {
+          "BASE_URL": "{url}"
+        }
+      },
+      "label-old": "develop",
+      "screens": {
+        "Customer page": "assignments/customers/1001/customer-page",
+        "fluentui": null
+      },
+      "ds-hosts": {
+        "Button": "button[data-testid=button]",
+        "Dropdown": "div.dropdown:has(input[id^=react-select-])",
+        "Input": "div.input:has(> input)",
+        "Textarea": "textarea.form-control.textarea",
+        "TextLink": "a.btn:has(> div.pl-sm)"
+      },
+      "args": [
+        "--wait-for",
+        ".menu-items",
+        "--settle",
+        "1000",
+        "--browsers",
+        "chrome"
       ]
     }
   }

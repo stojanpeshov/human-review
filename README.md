@@ -530,8 +530,8 @@ waits on that pipeline as a whole: `.gitlab-ci.yml` is the only workflow name th
 a merged-results pipeline, whose SHA is not the branch's, is not seen yet. `CODEOWNERS` is
 read from `.gitlab/` too, sections and all.
 
-The page still says "PR" for a merge request, and its *in VS Code* / *in IntelliJ* buttons
-for a merge request are not there: both open GitHub pull requests only.
+The page still says "PR" for a merge request, and its *in VS Code* button for a merge
+request is not there: it opens GitHub pull requests only.
 
 ### On Bitbucket Server / Data Center instead of GitHub
 
@@ -720,27 +720,26 @@ one of those roles that sit **outside** any DS component. Green is context; red 
 product.
 
 ```sh
-./ds-audit.py --base-new http://localhost:4300 --base-old http://localhost:4301 \
-              --screen "Book a visit=pets/11/visits/add" \
-              --screen "Edit a visit=visits/1/edit" \
-              --screen "Edit a pet=pets/11/edit" \
-              --label-new my-branch --label-old main \
-              --source ../frontend/src \
+./ds-audit.py --base-new http://127.0.0.1:5301 --base-old http://127.0.0.1:5302 \
+              --screen "home=home" --screen "contacts=contacts" \
+              --screen "Customer page=assignments/customers/1001/customer-page" \
+              --ds-host "Button=button[data-testid=button]" \
+              --label-new my-branch --label-old develop \
               --assets assets -o assets/ds-audit.html --json assets/ds-audit.json
 ```
 
-**Which screens?** All of them. `steps.dsaudit.screens` in `human-review.json` is the
-app's whole catalogue — every route, deep-linked to a seeded row — not the two screens
-somebody guessed the branch touched. The audit shoots every one, draws a viewer only for
-the screens whose DOM differs between the two builds, and names the rest in one line
-under the verdict ("also audited, identical on both sides"). Which screens matter is
-decided by the diff, never by hand. The one thing the diff cannot see is a changed screen
-that is not in the catalogue, so `run-steps.py` follows every changed Angular component
-in the diff to its route (one hop through the templates that embed an unrouted child) and
-prints, in red at the top of the UX tab and in the run's notes, any route the catalogue
-does not reach — *"VisitEditComponent renders visits/:id/edit and no screen reaches it"*.
-That is the exact failure this arrangement exists to rule out: a two-screen list that
-covered "Book a visit" while the branch's own "Edit a visit" was never looked at.
+**Which screens?** All of them. `run-steps.py` reads the app's routes off its React Router
+modules (`react_routes.py`: `frontend/src/routes.tsx` and the sub-route modules it imports,
+parsed, never run) — not the two screens somebody guessed the branch touched.
+`steps.dsaudit.screens` lays values over them: a route with a `:param` gets one there, a key
+that matches no route is a screen of its own, `null` drops one. The audit shoots every
+screen, draws a viewer only for the screens whose DOM differs between the two builds, and
+names the rest in one line under the verdict ("also audited, identical on both sides").
+Which screens matter is decided by the diff, never by hand. The one thing the diff cannot
+see is a screen it never shot, so a route with a parameter and no value is named under the
+verdict as *not visited* — and in red at the top when this branch changed the component it
+renders. That is the exact failure this arrangement exists to rule out: a list that covered
+"Book a visit" while the branch's own "Edit a visit" was never looked at.
 
 The role registry is **derived, not listed**. A hand-written table of "roles the design
 system covers" is wrong the day the second component lands and nobody remembers the file
@@ -748,9 +747,12 @@ exists, so it is read from four sources in descending authority — `data-ds-cov
 the component author said it out loud, then the control a rendered DS host actually
 wraps, then the same reading taken off a template for a component this screen does not
 happen to render, and last a guess from the name, marked in the output as a guess.
-Adding `data-ds="datepicker"` to a component needs no code here. The one thing the design
-system has to do is mark its host with `data-ds="<name>"`; nothing depends on its class
-names or its DOM shape.
+Adding `data-ds="datepicker"` to a component needs no code here. A host is known by that
+marker, by a selector the project names for its own wrappers (`steps.dsaudit.ds-hosts`), or
+— for Fluent UI v9, Ludvig's design system — by the `fui-<Component>` root class Fluent
+stamps on every control, with the roles each covers in a catalogue (`FLUENT_CONTROLS`).
+What is *not* the design system is known the same way: react-bootstrap's classes and
+react-select (`KIT_CONTROLS`).
 
 The registry is built from **both** revisions at once and applied to both, which is what
 makes a migration read as an improvement and a straggler read as a gap. Several screens

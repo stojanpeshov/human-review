@@ -20,8 +20,9 @@ What is done and what is left: [`ludvig-progress.md`](ludvig-progress.md).
 | **Complexity** | cognitive complexity per entry point (HTTP route, queue, schedule, invoked function) | — |
 | **Logs** | every log statement the branch adds or changes, with ⚠ chips from Ludvig's logging standard | — |
 | **Cost** | what writing and reviewing the change cost | — |
+| **UX** | mitt-ludvig only: every route, base and branch side by side, controls outside Fluent UI v9 / mitt-ludvig-ui / `src/components` flagged | `steps.dsaudit`; see [below](#the-ux-tab-on-mitt-ludvig) |
 | CODEOWNERS | hidden: no Ludvig repo has one | — |
-| Demo, UX, Code City | postponed | — |
+| Demo, Code City | postponed | — |
 
 The CI gate reads CircleCI's commit statuses on GitHub and **never pushes**: an unpushed
 commit is reviewed and marked unproven.
@@ -75,6 +76,63 @@ For mitt-ludvig's front end, add a Vitest suite:
 "vitest": [{"label": "Vitest", "cwd": "frontend",
             "command": "VITE_STAGE=jest VITE_USE_MOCK_AUTH=true npx vitest run"}]
 ```
+
+## The UX tab on mitt-ludvig
+
+The design-system audit (`ds-audit.py`) shoots every screen of mitt-ludvig's front end on
+the merge-base and on the branch and flags, on the screens that changed, controls from
+outside the design system — Fluent UI v9, `@lrfkonsult/mitt-ludvig-ui` and the wrappers in
+`frontend/src/components`. A react-bootstrap control (`.btn`, `.form-select`,
+`.form-control`, `.form-check-input`), a react-select used directly, or a bare native
+control in a role those cover is a gap. Fluent controls are recognised by their `fui-*`
+classes; the wrappers by the selectors in `steps.dsaudit.ds-hosts`.
+
+- **Screens** are read off `frontend/src/routes.tsx` and the sub-route modules it imports.
+  A route with a `:param` needs a value in `steps.dsaudit.screens`
+  (`"Customer page": "assignments/customers/1001/customer-page"`); until it has one it is
+  listed as not visited (in red when the branch changed the component it renders).
+  `"fluentui": null` drops a route.
+- **Two dev servers.** `steps.dsaudit.app` in
+  [`human-review.ludvig.json`](../skills/human-review/human-review.ludvig.json) runs
+  `vite-app.py` per commit: the checkout itself for the branch, a `git worktree` of the
+  merge-base (with the checkout's `node_modules` linked in) for the base, each on a free
+  port, over plain http (`VITE_STAGE=jest`), with the API and the login mocked
+  (`VITE_USE_MOCKS=true`, `VITE_USE_MOCK_AUTH=true`). Vite's dependency cache goes to the
+  instance's own folder under `$TMPDIR/human-review-vite/`, never into `node_modules/.vite`.
+
+Prerequisites:
+
+- **`npm install` in `frontend/` must complete**, which needs the private
+  `@lrfkonsult/mitt-ludvig-ui` from GitHub Packages: a classic PAT with `read:packages`
+  (SSO-authorised for `LRFKonsult`) in the user-level `~/.npmrc`, never the repository's:
+
+  ```
+  @lrfkonsult:registry=https://npm.pkg.github.com
+  //npm.pkg.github.com/:_authToken=<PAT>
+  ```
+
+  A partial install fails the dev server, not the audit's own code: `index.scss` imports
+  `bootstrap/scss/_variables-dark`, which only the locked bootstrap 5.3 has.
+- **msw's worker** — `frontend/public/mockServiceWorker.js`, committed — serves the mocked
+  API; Playwright's Chromium registers it on `http://127.0.0.1`. Requests the worker does not
+  answer (it starts without being awaited, and not every endpoint is mocked) end in "Failed
+  to fetch" toasts — on both sides alike, so they are not a difference, but they cover part
+  of the screen.
+- **Mocked login must reach the app.** `VITE_USE_MOCK_AUTH` skips MSAL's initialisation, but
+  `AppBrowser.tsx` still calls `loginRedirect` when MSAL has no account, so every screen
+  stops at "Loggar in…" (or leaves for login.microsoftonline.com). Until mitt-ludvig renders
+  `<App />` when `isMockAuth()` is true, no screen can be audited.
+- Playwright's Chromium in the skill's venv (`playwright install chromium`). The template
+  passes `--browsers chrome` (Safari's WebKit re-shoot is optional) and `--wait-for
+  .menu-items` (the app's side menu: the screen has left "Loggar in…").
+
+Tried on a scratch clone of mitt-ludvig (16 Nov 2026, the private package stubbed and the
+login patch above applied): 12 static routes rendered on both sides; Fluent controls were
+recognised throughout; a branch that added a react-bootstrap `.btn`, a bare `<select>` and a
+`.form-select` to Home got three gaps, its Fluent `Dropdown` came out green, and two
+react-bootstrap buttons the base already had (create-customer, business-opportunity) were
+reported as pre-existing. `/assignments`, `/manage-customers/list-of-customers` and
+`/fluentui` did not render under mocks and were listed as not loaded.
 
 ## Running it
 

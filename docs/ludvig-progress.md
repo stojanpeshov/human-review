@@ -61,27 +61,41 @@ Every Java-ecosystem code path is gone, not kept as a fallback:
 Suite after the removal: all green except the 6 browser-layout tests that already failed
 before it (`test_no_page_hscroll` masthead ×4, `test_title_icons_centred` ×2).
 
+### pytest on the Sequence and Tests tabs, Linux fonts (17 Nov 2026)
+
+- **Sequence: `@pytest.mark.genseq` is a tag.** A marked test is listed under *Tagged for
+  tracing* until a diagram names it. It is quoted from its markers to the end of its body.
+  A parametrised test's diagram (`test_x[a]`) finds its `def` (`tabs/sequence.py`).
+- **A Python test is read whole.** Snippet windows follow a `def`'s indented body, not
+  only braces (`extract-snippet._closing_line`). So semcov's pairing reads the body, and
+  the Tests and Review cards quote all of it.
+- **Test-data dots.** A pytest test's dot names the `tests/data/<dataset>` entries it loads:
+  through its body, the fixtures it requests (conftest included), the project helpers they
+  call, and module path constants. What every test reads through autouse fixtures is the
+  baseline and gets no dot. On activities-backend 50 tests get one, e.g.
+  `ML-1570 + onboarding_update` ×35. The hover says *Test data: …*
+  (`shared/fixtures.py: pytest_data_by_test`).
+- **Linux fonts.** The page's font stack falls back to Liberation Sans/Arial before the
+  generic sans-serif. DejaVu Sans is wide enough to wrap the masthead. `test_panel_swap`
+  passes with Playwright's system dependencies installed.
+
+Suite: all green except the two `test_title_icons_centred` checks (see below).
+
 ## Left to do
 
-- **Pytest tests are not "tagged" on the Sequence tab.** `run-steps.py` selects
-  `@pytest.mark.genseq` tests, but `tabs/sequence.py` gives `.py` files no test kind, so a
-  marked test is labelled by its diagram only, never listed under *Tagged for tracing*.
-- **semcov reads only a Python test's name.** Its test-body window counts braces
-  (`extract-snippet._closing_line`), so for a `def` it stops on the first line.
+- **Two icon-centring tests fail on Linux.** `test_title_icons_centred` holds the rerun
+  rings and the voice pills within 0.5px of the title's capitals. The nudges are tuned to
+  macOS/Windows fonts (SF, Segoe UI); with Linux's fonts they sit 1.1px off. A
+  font-independent fix needs CSS `text-box-trim`, which Playwright's Chromium 131 lacks.
 - **Postponed tabs still carry Java/Angular:**
   - Code City (`regenerate-codecity.sh`, `city-coverage.py`) is a JaCoCo-based tool.
   - Demo film scripts (`record-feature-video.sh`: Spring `/actuator/info`, Angular router)
     and the Running-app/JDBC wording in `shared/commands.py`.
   - The UX audit's UI-kit catalogue still lists Angular Material/PrimeNG (inert on React).
   - The film step's `steps.video.app.reset` (resets the stack before recording).
-- **Fixture dots (Tests, Sequence):** still read `db/fixtures/*.sql`, petclinic's layout.
-  Nothing at Ludvig has one, so they never show. Decide: drop them, or point them at
-  Ludvig's test data.
 
   Each is reworked or dropped when its tab is picked up.
 - **Postponed:** IntelliJ plugin, Code City, Demo film, UX audit.
-- **This machine:** two `test_panel_swap` browser tests need
-  `sudo .venv/bin/playwright install-deps chromium`.
 - **Known limits** (from `ludvig.md`):
   - The derived OpenAPI misses fields read deep in services.
   - `hr_genseq` does not see `aiohttp` or mocks.

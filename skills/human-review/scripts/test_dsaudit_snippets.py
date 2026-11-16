@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""A drawn verdict opens onto the element itself: its markup, its template line, its rule.
+"""A drawn verdict opens onto the element itself: its markup and its rule.
 
 A red box on a screenshot says *that* a control is wrong. The reviewer then has to find
-which element it is in the markup, which template wrote it, and why it counts as a gap
-rather than a choice — three lookups the audit already has every answer to. Pinned below:
+which element it is in the markup, and why it counts as a gap rather than a choice —
+lookups the audit already has every answer to. Pinned below:
 
 * **the markup is the page's, trimmed** — tag, the attributes somebody wrote, a short
-  inside, at most ten lines; Angular's own stamps are not markup anybody wrote;
-* **the source is the template that wrote it** — reached through the component the page
-  says the element sits in, never a guess dressed as a line number;
+  inside, at most ten lines; an inline style is not markup anybody wrote;
 * **the rule names the component** that should have been used, from the audit's own
   registry, and how widely the rest of the app already uses it;
 * **one number per verdict**, the same on the picture and on its row.
@@ -93,24 +91,20 @@ def test_a_capture_without_markup_says_its_tag_was_rebuilt():
 def test_the_page_records_markup_only_for_what_can_become_a_verdict():
     js = ds.SNAPSHOT_JS
     assert "html: judged ? snipOf(el, 2) : null" in js
-    assert "hosts: judged ? hostsOf(el) : []" in js
-    # Angular's stamps: CSS scoping, dev-mode binding mirrors. Not markup anybody wrote.
-    assert "_ngcontent|_nghost|ng-reflect-" in js
+    assert "const NOISE_ATTR = /^style$/;" in js
 
 
-def test_the_extractor_trims_a_real_angular_element_in_a_browser():
-    """The extractor, run on a page: the scoping attributes and the state classes Angular
-    stamps go, the attributes the template wrote stay, and the components around the
-    element are listed nearest first."""
+def test_the_extractor_trims_a_real_element_in_a_browser():
+    """The extractor, run on a page: the inline style goes, the attributes somebody wrote
+    stay, and a long list of options is cut with a count."""
     sync = pytest.importorskip("playwright.sync_api")
-    page_html = """<body><app-root _nghost-abc=""><app-visit-edit _ngcontent-abc="">
+    page_html = """<body><div id="root">
       <form id="visit"><div class="form-group"><label for="vet">Vet</label>
-      <select _ngcontent-xyz-c12="" id="vet" name="vetId" ng-reflect-model="1"
-              class="form-control ng-untouched ng-pristine ng-valid" style="width:200px">
-        <option value="0: null">-- none --</option><option value="1: 1">James Carter</option>
-        <option value="2: 2">Helen Leary</option><option value="3: 3">Linda Douglas</option>
-        <option value="4: 4">Rafael Ortega</option><option value="5: 5">Henry Stevens</option>
-      </select></div></form></app-visit-edit></app-root></body>"""
+      <select id="vet" name="vetId" class="form-control" style="width:200px">
+        <option value="">-- none --</option><option value="1">James Carter</option>
+        <option value="2">Helen Leary</option><option value="3">Linda Douglas</option>
+        <option value="4">Rafael Ortega</option><option value="5">Henry Stevens</option>
+      </select></div></form></div></body>"""
     try:
         with sync.sync_playwright() as p:
             browser = p.chromium.launch()
@@ -121,130 +115,20 @@ def test_the_extractor_trims_a_real_angular_element_in_a_browser():
     except Exception as e:  # noqa: BLE001 - no browser on this machine is a skip
         pytest.skip(f"no Chromium for Playwright: {e}")
     sel, = [n for n in snap["nodes"] if n["tag"] == "select"]
-    assert sel["hosts"] == ["app-visit-edit", "app-root"]
     out = ds.snippet_of(sel)["html"].split("\n")
     assert out[0] == '<select id="vet" name="vetId" class="form-control">'
-    assert out[1] == '  <option value="0: null">-- none --</option>'
+    assert out[1] == '  <option value="">-- none --</option>'
     assert out[-2] == "  <!-- 2 more <option> -->" and out[-1] == "</select>"
     label, = [n for n in snap["nodes"] if n["tag"] == "label"]
-    assert label["html"] is None and label["hosts"] == [], "not a control: no markup kept"
+    assert label["html"] is None, "not a control: no markup kept"
 
 
-# ── where it was written ──────────────────────────────────────────────────────────
-
-def _angular_tree(tmp_path):
-    app = tmp_path / "src" / "app"
-    (app / "visits" / "visit-edit").mkdir(parents=True)
-    (app / "visits" / "visit-edit" / "visit-edit.component.ts").write_text(
-        "import {Component} from '@angular/core';\n"
-        "@Component({\n  selector: 'app-visit-edit',\n"
-        "  templateUrl: './visit-edit.component.html'\n})\n"
-        "export class VisitEditComponent {}\n")
-    (app / "visits" / "visit-edit" / "visit-edit.component.html").write_text(
-        '<form id="visit">\n'
-        '  <select [id]="dynamicId" name="other"></select>\n'
-        '  <div class="form-group">\n'
-        '    <select id="vet" name="vetId"\n'
-        '            class="form-control" [(ngModel)]="visit.vetId">\n'
-        '      <option [ngValue]="null">-- none --</option>\n'
-        "    </select>\n"
-        "  </div>\n"
-        "  <app-card><select name=\"inCard\"></select></app-card>\n"
-        "</form>\n")
-    (app / "shared").mkdir()
-    (app / "shared" / "card.component.ts").write_text(
-        "@Component({\n  selector: 'app-card',\n"
-        "  template: `\n    <div class=\"card\">\n      <ng-content></ng-content>\n"
-        "    </div>`\n})\nexport class CardComponent {}\n")
-    (app / "shared" / "card.component.spec.ts").write_text(
-        "@Component({ selector: 'app-spec-only', template: `<select id=\"vet\"></select>` })\n"
-        "export class X {}\n")
-    return tmp_path, app
-
-
-def _bare(tag="select", hosts=None, html=None, **el):
-    f = {"verdict": "bare", "side": "new", "element": {"tag": tag, "sig": "s", **el}}
-    if hosts is not None:
-        f["element"]["hosts"] = hosts
-    f["snippet"] = ({"html": html, "from": "rendered"} if html else
-                    ds.snippet_of({"tag": tag, **el}))
-    return f
-
-
-def test_every_component_is_indexed_by_its_selector_to_its_template(tmp_path):
-    root, app = _angular_tree(tmp_path)
-    idx = ds.template_index([app])
-    assert set(idx) == {"app-visit-edit", "app-card"}, "a spec file declares no screen"
-    assert idx["app-visit-edit"]["path"].name == "visit-edit.component.html"
-    card = idx["app-card"]
-    assert card["path"].name == "card.component.ts" and card["line0"] == 2
-    assert '<div class="card">' in card["text"]
-
-
-def test_the_element_is_found_in_the_template_of_the_component_around_it(tmp_path):
-    """The page says which components sit around the select; the nearest one whose
-    template has a `<select>` naming it is the file, and the line is its opening tag's —
-    across a tag whose attributes run over two lines."""
-    root, app = _angular_tree(tmp_path)
-    f = _bare(hosts=["app-visit-edit", "app-root"],
-              html='<select id="vet" name="vetId" class="form-control">\n</select>')
-    src = ds.locate_source(f, ds.template_index([app]), root)
-    assert src == {"file": "src/app/visits/visit-edit/visit-edit.component.html",
-                   "line": 4, "via": "app-visit-edit", "matches": 1}
-
-
-def test_a_bound_attribute_is_not_the_static_one_it_resembles(tmp_path):
-    """`[id]="dynamicId"` on line 2 says nothing about an id of `vet`; only a written
-    `id="vet"` scores. Otherwise the first select of the form wins every time."""
-    root, app = _angular_tree(tmp_path)
-    f = _bare(hosts=["app-visit-edit"], html='<select id="vet">\n</select>')
-    assert ds.locate_source(f, ds.template_index([app]), root)["line"] == 4
-    assert not ds._attr_written(' [id]="vet"', "id", "vet")
-    assert not ds._attr_written(' data-name="vetId"', "name", "vetId")
-    assert ds._attr_written(' formControlName="vetId"', "formcontrolname", "vetId")
-
-
-def test_a_projected_element_is_found_in_the_parent_that_wrote_it(tmp_path):
-    """A select inside `<app-card>` sits in the card's DOM but was written in the visit
-    form's template, inside the card's tag. The card's own template has no select, so the
-    search climbs to the next component out."""
-    root, app = _angular_tree(tmp_path)
-    f = _bare(hosts=["app-card", "app-visit-edit"], html='<select name="inCard">\n</select>')
-    src = ds.locate_source(f, ds.template_index([app]), root)
-    assert src["via"] == "app-visit-edit" and src["line"] == 9
-
-
-def test_with_no_hosts_only_a_match_on_a_name_counts_and_changed_templates_go_first(
-        tmp_path):
-    """A capture older than `hosts`: every template is searched, but a bare `<select>`
-    tag with nothing naming it is not evidence of anything."""
-    root, app = _angular_tree(tmp_path)
-    idx = ds.template_index([app])
-    f = _bare(id="vet", name="vetId")
-    src = ds.locate_source(f, idx, root, changed=[])
-    assert src["via"] == "search" and src["line"] == 4
-    assert ds.locate_source(_bare(id="nowhere"), idx, root) is None
-    assert ds.locate_source(_bare(), idx, root) is None, "no identity, no guess"
-
-
-def test_an_ambiguous_match_says_so(tmp_path):
-    root, app = _angular_tree(tmp_path)
-    f = _bare(hosts=["app-visit-edit"], html="<select class=\"x\">\n</select>")
-    src = ds.locate_source(f, ds.template_index([app]), root)
-    assert src["matches"] == 3 and src["line"] == 2
-
-
-def test_the_source_bar_links_the_template_line_the_way_every_snippet_does(tmp_path):
-    root, app = _angular_tree(tmp_path)
-    f = _bare(hosts=["app-visit-edit"], html='<select id="vet">\n</select>')
-    f["source"] = ds.locate_source(f, ds.template_index([app]), root)
-    bar = ds.source_bar(f, root, None)
-    target = (root / f["source"]["file"]).resolve()
-    assert f'href="vscode://file/{target}:4:1"' in bar
-    assert ">visit-edit.component.html</a>" in bar, "line 4 is in the href, not the face"
-    assert 'class="srcref srcbar-path"' in bar, "the page's own source bar, not a copy"
-    assert ">as rendered</span>" in bar
-    assert "no template" in ds.source_bar(dict(f, source=None), root, None)
+def test_the_source_bar_says_how_the_markup_was_got():
+    rendered = {"snippet": {"html": '<select id="vet">\n</select>', "from": "rendered"}}
+    assert ds.source_bar(rendered) == (
+        '<div class="srcbar"><span class="code-badge" data-diff="unchanged" data-tip="The '
+        'element as the browser rendered it, trimmed">as rendered</span></div>')
+    assert ">rebuilt</span>" in ds.source_bar({"snippet": ds.snippet_of({"tag": "select"})})
 
 
 # ── the rule ──────────────────────────────────────────────────────────────────────

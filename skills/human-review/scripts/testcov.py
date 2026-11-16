@@ -11,8 +11,8 @@ It runs each suite once with a per-test coverage hook — nothing in the project
 
   * **pytest** (`steps.testcov.pytest`): the service's own suite, in its own environment,
     under coverage.py with per-test contexts (`pytest_suites`);
-  * **Karma** (`steps.testcov.karma`): a Karma config this skill ships loads the project's
-    own and adds a framework + reporter that snapshot Istanbul's counters around every spec;
+  * **Vitest** (`steps.testcov.vitest`): the project's own Vite config, wrapped so a setup
+    file this skill ships takes V8's coverage around every test (`vitest_suites`);
   * **browser suites** (`steps.testcov.e2e`): not run from here. They already ran, traced,
     for the Tests tab's recordings (`city.tests`, `traces.commands`); run with COVERAGE_DIR
     set, the project's fixtures leave per-test Chromium coverage. This harvests what they
@@ -27,10 +27,10 @@ Writes `.human-review/assets/test-coverage.json`:
   executableAll {file: [lines]}   the same, for EVERY production file in `sources` — the
                                   denominator of a whole-project line coverage, which is
                                   what the Code City colours by (`city-coverage.py`)
-  unmeasurable  [{file, lines, reason, proxy?}]   changed lines no probe can see: an
-                                  annotation, a query string, a migration. `proxy` names
-                                  the lines that DO run when it matters — the annotated
-                                  method's body, a repository method's call sites
+  unmeasurable  [{file, lines, reason, proxy?}]   changed lines no probe can see: a
+                                  line run only at import, a docstring, a migration.
+                                  `proxy` names the lines that DO run when it matters —
+                                  a changed function header's body
   suites        [{name, source, status, tests, seconds, note}]
   tests         [{id, suite, title, file, line, status, source, hits: {file: [lines]}}]
 
@@ -39,12 +39,12 @@ the join with the diff is redone by the page at every build, so a rebuild is fre
 
 Usage:
   testcov.py --base origin/main [--config human-review.json]
-             [--out .human-review/assets/test-coverage.json] [--only pytest,karma,e2e]
+             [--out .human-review/assets/test-coverage.json] [--only pytest,vitest,e2e]
              [--reuse]
 
 `--reuse` runs no suite: it re-reads what the last run left in `.human-review/coverage/`
-(the JUnit dumps, `karma-N.json`, the browser suites' dumps — those are never run from
-here anyway) and writes the file again. For a change to what this program *derives*, not
+(the pytest and Vitest dumps, the browser suites' dumps — those are never run from here
+anyway) and writes the file again. For a change to what this program *derives*, not
 to what the tests do; seconds instead of minutes, and nothing in that folder is touched.
 
 Exit 0 with the file written; 3 when `steps.testcov` is not configured; 1 on a failure that
@@ -82,10 +82,9 @@ def hold_measuring_lock(work: Path = WORK) -> None:
     another run measures the same checkout.
 
     Two runs at once on one checkout share everything this program measures with: the
-    JUnit dump directory (`junit-0/`, wiped and refilled per run, files numbered from 1 in
-    both), the Karma output, the module's `target/`. 20 Oct 2026 on petclinic: two
-    refreshes overlapped and one coverage file listed 386 JUnit tests of 193, and the
-    candidate set the Tests tab offers its model moved between runs. `run-steps.py`'s
+    coverage data files (`pytest-N.coverage`, `vitest-N/`, wiped and refilled per run).
+    20 Oct 2026: two refreshes overlapped and one coverage file listed every test twice,
+    and the candidate set the Tests tab offers its model moved between runs. `run-steps.py`'s
     `traces` takes the same lock while the browser suites write their dumps here."""
     global _HELD
     work.mkdir(parents=True, exist_ok=True)
@@ -192,7 +191,7 @@ SIGNATURE = "signature — runs as its body runs"
 
 
 def classify(path: str, src: list[str], lines: list[int], executable: set[int],
-             callers=None, init: set[int] | frozenset = frozenset()) -> list[dict]:
+             init: set[int] | frozenset = frozenset()) -> list[dict]:
     """The changed lines of `path` that no probe sees run, grouped by why: a Python module's
     by `classify_python`, anything else by what kind of file it is."""
     if not lines:
@@ -204,7 +203,7 @@ def classify(path: str, src: list[str], lines: list[int], executable: set[int],
         why = {".sql": "SQL — runs inside the database, where no probe looks",
                ".html": "template — no browser run mapped it",
                ".ts": "types — erased when compiled",
-               ".properties": "configuration", ".yml": "configuration",
+               ".yml": "configuration",
                ".yaml": "configuration", ".xml": "configuration",
                ".json": "configuration"}.get(ext, "no probe for this kind of file")
         return [{"file": path, "lines": lines, "reason": why}]
@@ -219,7 +218,7 @@ IMPORT_TIME = "runs when the module is imported — charged to no test"
 def python_owners(src: list[str]) -> dict[int, int]:
     """`{line: first body line}` for every line of a `def`'s header — its decorators, the
     `def` and a signature spread over several lines. A changed header line runs as its body
-    runs (`fold_signature`), the way a Java signature does."""
+    runs (`fold_signature`)."""
     import ast
     try:
         tree = ast.parse("\n".join(src))
@@ -265,18 +264,6 @@ def classify_python(path: str, src: list[str], lines: list[int], executable: set
     return list(groups.values())
 
 
-# ------------------------------------------------------------------------------- tools
-
-
-
-
-
-
-
-
-
-
-
 # ------------------------------------------------------------------------------ the repo
 
 class Repo:
@@ -284,21 +271,6 @@ class Repo:
         self.root = root
         self.files = subprocess.run(["git", "ls-files"], capture_output=True, text=True,
                                     cwd=root).stdout.splitlines()
-        self._by_name: dict[str, list[str]] = {}
-        for f in self.files:
-            self._by_name.setdefault(Path(f).name, []).append(f)
-
-    def by_suffix(self, suffix: str, prefer: str = "") -> str | None:
-        """The one tracked file ending in `suffix`, the one under `prefer` when there are
-        several — JaCoCo names a source `package/File.java`, which is a suffix of its path."""
-        suffix = suffix.lstrip("/")
-        hits = [f for f in self._by_name.get(Path(suffix).name, [])
-                if f == suffix or f.endswith("/" + suffix)]
-        if len(hits) > 1:
-            main = [f for f in hits if "/src/main/" in f] or hits
-            pref = [f for f in main if prefer and f.startswith(prefer.rstrip("/") + "/")]
-            hits = pref or main
-        return hits[0] if hits else None
 
     def text(self, path: str) -> list[str]:
         try:
@@ -307,43 +279,7 @@ class Repo:
             return []
 
 
-def decl_line(src: list[str], name: str) -> int | None:
-    """Where a test method or a spec is declared: `void name(` / `name(` for Java, the
-    quoted description inside `it(` for Jasmine."""
-    rx = re.compile(r"\b" + re.escape(name) + r"\s*\(")
-    for i, t in enumerate(src):
-        if rx.search(t) and not t.strip().startswith(("//", "*", "@")):
-            return i + 1
-    return None
-
-
-def js_unescaped(line: str) -> str:
-    r"""A source line with its JS string escapes decoded (`\'` `\"` `\`` `\\`), so the
-    title a runner reports — `the newer one's loading` — is found in the literal that wrote
-    it, `'the newer one\'s loading'`. Eval run 12 lost a spec this way: no file, no line,
-    no row in the matrix."""
-    return re.sub(r"\\(.)", r"\1", line) if "\\" in line else line
-
-
-def spec_line(src: list[str], description: str) -> int | None:
-    for quote in ("'", '"', "`"):
-        needle = quote + description + quote
-        for i, t in enumerate(src):
-            if needle in js_unescaped(t) and re.search(r"\b(f|x)?it\s*\(", t):
-                return i + 1
-    for i, t in enumerate(src):
-        if description in js_unescaped(t):
-            return i + 1
-    return None
-
-
 # ------------------------------------------------------------------------------- suites
-
-def expand(cmd: str, **slots) -> str:
-    for k, v in slots.items():
-        cmd = cmd.replace("{" + k + "}", v)
-    return cmd
-
 
 def run_logged(cmd: str, cwd: Path, logfile: Path, env: dict | None = None) -> int:
     logfile.parent.mkdir(parents=True, exist_ok=True)
@@ -352,71 +288,6 @@ def run_logged(cmd: str, cwd: Path, logfile: Path, env: dict | None = None) -> i
         r = subprocess.run(cmd, shell=True, cwd=cwd, stdout=fh, stderr=subprocess.STDOUT,
                            env={**os.environ, **(env or {})})
     return r.returncode
-
-
-
-
-def karma_tests(doc: dict, repo: Repo, label: str, cwd: str, rel) -> list[dict]:
-    """The rows of one Karma run (`karma-N.json`), each placed at the spec that declares it:
-    the file whose source holds the description (escapes decoded — see `js_unescaped`),
-    the describe's first word breaking a tie, and the `it(` line in it."""
-    specs = [f for f in repo.files if f.endswith(".spec.ts")
-             and f.startswith(cwd.rstrip("/") + "/" if cwd else "")]
-    texts = {f: [js_unescaped(l) for l in repo.text(f)] for f in specs}
-    out = []
-    for t in doc.get("tests", []):
-        desc, full = t.get("description", ""), t.get("id", "")
-        top = full[: max(0, len(full) - len(desc))].strip().split(" ")[0]
-        cands = [f for f, src in texts.items() if any(desc in l for l in src)]
-        if len(cands) > 1 and top:
-            cands = [f for f in cands if any(top in l for l in texts[f])] or cands
-        file = cands[0] if cands else None
-        hits = {r: v for p, v in t.get("hits", {}).items() if (r := rel(p))}
-        out.append({"id": f"{label}:{full}", "suite": label, "title": desc or full,
-                    "file": file, "line": spec_line(repo.text(file), desc) if file else None,
-                    "status": t.get("status", ""), "source": "karma", "hits": hits})
-    return out
-
-
-def karma_suites(cfg: list[dict], repo: Repo,
-                 reuse: bool = False) -> tuple[list[dict], list[dict], dict]:
-    tests, suites, executable = [], [], {}
-    conf = TOOLS / "karma" / "karma.conf.js"
-    for i, run in enumerate(cfg):
-        label = run.get("label", "Karma")
-        cwd = repo.root / run.get("cwd", ".")
-        out = (WORK / f"karma-{i}.json").resolve()
-        t0 = time.monotonic()
-        rc = 0
-        if not reuse:
-            out.unlink(missing_ok=True)
-            rc = run_logged(expand(run["command"], karma=f"--karma-config={shlex.quote(str(conf))}"),
-                            cwd, WORK / f"karma-{i}.log",
-                            env={"HR_TESTCOV_KARMA_BASE": str((cwd / run.get("config", "karma.conf.js")).resolve()),
-                                 "HR_TESTCOV_OUT": str(out)})
-        if not out.is_file():
-            suites.append({"name": label, "source": "karma", "status": "failed", "tests": 0,
-                           "seconds": round(time.monotonic() - t0, 1),
-                           "note": f"exit {rc} and no per-spec coverage — see {WORK}/karma-{i}.log"})
-            continue
-        doc = json.loads(out.read_text(encoding="utf-8"))
-
-        def rel(p: str) -> str | None:
-            try:
-                return str(Path(p).resolve().relative_to(repo.root.resolve()))
-            except ValueError:
-                return None
-
-        for p, lines in doc.get("executable", {}).items():
-            r = rel(p)
-            if r:
-                executable.setdefault(r, set()).update(lines)
-        tests.extend(karma_tests(doc, repo, label, run.get("cwd", ""), rel))
-        suites.append({"name": label, "source": "karma", "status": "ran",
-                       "tests": len(doc.get("tests", [])),
-                       "seconds": round(time.monotonic() - t0, 1),
-                       "note": f"exit {rc}, see {WORK}/karma-{i}.log" if rc else ""})
-    return tests, suites, executable
 
 
 #: coverage.py's settings for a per-test run, written fresh each time beside its data.
@@ -610,33 +481,30 @@ def vitest_suites(cfg: list[dict], repo: Repo, reuse: bool = False) -> tuple[lis
     return tests, suites, executable
 
 
-def e2e_suites(cfg: dict, repo: Repo, tools: dict | None, head: str,
-               node_modules: list[str], init: dict) -> tuple[list[dict], list[dict], dict]:
+def e2e_suites(cfg: dict, repo: Repo, head: str,
+               node_modules: list[str]) -> tuple[list[dict], list[dict], dict]:
     tests, suites, executable = [], [], {}
     base = repo.root / cfg.get("dir", str(WORK))
     project = cfg.get("project", "")
     names = cfg.get("suites") or {"playwright": "E2E Playwright", "cucumber": "E2E Cucumber"}
-    jar = base / cfg.get("jar", "backend-app.jar")
     for sub, label in names.items():
         d = base / sub
         run = d / "run.json"
         if not run.is_file():
-            suites.append({"name": label, "source": "jacoco+v8", "status": "skipped", "tests": 0,
+            suites.append({"name": label, "source": "v8", "status": "skipped", "tests": 0,
                            "note": f"no {d.relative_to(repo.root) if d.is_relative_to(repo.root) else d}"
                                    "/run.json — the browser suite did not run with COVERAGE_DIR set"})
             continue
         meta = json.loads(run.read_text(encoding="utf-8"))
         if meta.get("commit") and head and not head.startswith(meta["commit"]) \
                 and not meta["commit"].startswith(head):
-            suites.append({"name": label, "source": "jacoco+v8", "status": "stale", "tests": 0,
+            suites.append({"name": label, "source": "v8", "status": "stale", "tests": 0,
                            "note": f"measured on {meta['commit'][:8]}, not on HEAD {head[:8]} — "
                                    "re-run the traced suite"})
             continue
         t0 = time.monotonic()
         files = sorted(f for f in d.glob("*.json") if f.name != "run.json")
-        # The backend's side (JaCoCo dumps of a JVM under the agent) went with Java support;
-        # what a browser suite leaves of its own (Chromium's V8 coverage) is still read.
-        jc = {"execs": {}, "executable": {}, "init": {}}
+        # What a browser suite leaves of its own: Chromium's V8 coverage of the frontend.
         v8 = {"tests": {}, "executable": {}}
         if (d / "scripts").is_dir():
             r = subprocess.run(["node", str(TOOLS / "v8-join.js"), str(d), cfg.get("frontend", ""),
@@ -650,24 +518,15 @@ def e2e_suites(cfg: dict, repo: Repo, tools: dict | None, head: str,
         n = 0
         for f in files:
             t = json.loads(f.read_text(encoding="utf-8"))
-            hits: dict[str, list[int]] = {}
-            for src, lines in jc["execs"].get(f.stem + ".exec", {}).items():
-                path = repo.by_suffix(src, cfg.get("backend", ""))
-                if path:
-                    hits[path] = lines
-            for path, lines in v8["tests"].get(f.name, {}).items():
-                hits[path] = sorted(set(hits.get(path, [])) | set(lines))
+            hits = {path: sorted(set(lines)) for path, lines in v8["tests"].get(f.name, {}).items()}
             file = f"{project}/{t['file']}" if project and t.get("file") else t.get("file")
             n += 1
             tests.append({"id": f"{label}:{t.get('id')}", "suite": label, "title": t.get("title", ""),
                           "file": file, "line": t.get("line"), "status": t.get("status", ""),
-                          "source": "+".join(s for s, on in (("jacoco", f.stem + ".exec" in jc["execs"]),
-                                                             ("v8", f.name in v8["tests"])) if on),
-                          "hits": hits})
-        missing = [] if jar.is_file() else [f"no {jar.name} — the backend side is not measured"]
-        suites.append({"name": label, "source": "jacoco+v8", "status": "ran", "tests": n,
+                          "source": "v8", "hits": hits})
+        suites.append({"name": label, "source": "v8", "status": "ran", "tests": n,
                        "seconds": round(time.monotonic() - t0, 1),
-                       "note": "; ".join(missing), "measuredAt": meta.get("startedAt", "")})
+                       "note": "", "measuredAt": meta.get("startedAt", "")})
     return tests, suites, executable
 
 
@@ -686,14 +545,12 @@ def fold_signature(group: dict, executable: dict, tests: list[dict]) -> None:
             t["hits"][path] = sorted(set(got) | set(group["lines"]))
 
 
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--base", default="origin/main")
     ap.add_argument("--config", default="human-review.json")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
-    ap.add_argument("--only", help="comma-separated: pytest,vitest,karma,e2e")
+    ap.add_argument("--only", help="comma-separated: pytest,vitest,e2e")
     ap.add_argument("--reuse", action="store_true",
                     help="run no suite; re-read what the last run left in .human-review/coverage")
     args = ap.parse_args(argv)
@@ -708,7 +565,7 @@ def main(argv=None) -> int:
     if not cfg:
         log("steps.testcov is not configured in human-review.json — nothing to measure")
         return 3
-    only = set(args.only.split(",")) if args.only else {"pytest", "vitest", "junit", "karma", "e2e"}
+    only = set(args.only.split(",")) if args.only else {"pytest", "vitest", "e2e"}
     repo = Repo(root)
     head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     mb = subprocess.run(["git", "merge-base", args.base, "HEAD"], capture_output=True,
@@ -727,7 +584,6 @@ def main(argv=None) -> int:
             changed[path] = keep
 
     hold_measuring_lock(WORK)
-    tools = None
     tests, suites, executable, init = [], [], {}, {}
 
     def merge(got):
@@ -741,27 +597,19 @@ def main(argv=None) -> int:
         WORK.mkdir(parents=True, exist_ok=True)
         merge(pytest_suites(cfg["pytest"], repo, init, args.reuse,
                             lambda p: in_scope(p, sources, exclude)))
-    if cfg.get("junit"):
-        suites.append({"name": "JUnit", "source": "jacoco", "status": "skipped", "tests": 0,
-                       "note": "JUnit/JaCoCo is not measured in the Ludvig fork — "
-                               "configure steps.testcov.pytest"})
     if cfg.get("vitest") and "vitest" in only:
         WORK.mkdir(parents=True, exist_ok=True)
         merge(vitest_suites(cfg["vitest"], repo, args.reuse))
-    if cfg.get("karma") and "karma" in only:
-        merge(karma_suites(cfg["karma"], repo, args.reuse))
     if cfg.get("e2e") and "e2e" in only:
         mods = [str(root / p / "node_modules") for p in
-                (cfg["e2e"].get("project"), cfg["e2e"].get("frontend"),
-                 *[k.get("cwd") for k in cfg.get("karma") or []]) if p]
-        merge(e2e_suites(cfg["e2e"], repo, tools, head, mods, init))
+                (cfg["e2e"].get("project"), cfg["e2e"].get("frontend")) if p]
+        merge(e2e_suites(cfg["e2e"], repo, head, mods))
 
     unmeasurable = []
-    find = None
     for path, lines in changed.items():
         ex = executable.get(path, set())
         dark = [n for n in lines if n not in ex]
-        for g in classify(path, repo.text(path), dark, ex, find, init.get(path, set()) - ex):
+        for g in classify(path, repo.text(path), dark, ex, init.get(path, set()) - ex):
             if g["reason"] == SIGNATURE:
                 fold_signature(g, executable, tests)
             else:

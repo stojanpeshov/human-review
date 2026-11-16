@@ -30,7 +30,7 @@ sentences, and it is the one field a Fixed or Ignored card cannot do without. Th
 cannot be understood from its anchor; it is not the default.
 
 **Name files and symbols in prose, never line numbers.** Write `OwnerRestController.getOwner`,
-not `OwnerRestController.java:150` or "line 57": the page shows file names without lines, and
+not `activity_handler.py:150` or "line 57": the page shows file names without lines, and
 the `file:` field already carries the line the link lands on.
 
 ````markdown
@@ -55,7 +55,7 @@ session: 16a1e790-2c96-4f1b-8a4f-2ddcf2d10a8e
 ## Ignored
 
 ### Collapse the two divergent booking implementations
-- file: petclinic-backend/src/main/java/victor/training/VisitRestController.java:66
+- file: src/activities/handlers/visit_handler.py:66
 - source: /code-review agent 1
 - severity: medium
 - observation: two endpoints book a visit with different validation; they will drift.
@@ -63,11 +63,11 @@ session: 16a1e790-2c96-4f1b-8a4f-2ddcf2d10a8e
 
 ## Assumptions
 
-### @Transactional on the public endpoints, not on bookVisit
-- file: petclinic-backend/src/main/java/victor/training/VisitRestController.java:62-68
-- alternative: annotate `bookVisit` as the ticket asked — a silent no-op
+### The session commits in the handler, not in book_visit
+- file: src/activities/handlers/visit_handler.py:62-68
+- alternative: commit inside `book_visit` as the ticket asked — a partial write on a later failure
 - confidence: 0.85
-- why: Spring AOP ignores self-invoked private methods
+- why: the handler owns the unit of work; a helper that commits splits it
 ````
 
 ### Frontmatter
@@ -152,12 +152,12 @@ is not itself a `- key:` line; the continuation joins the value with a space, so
 as one sentence. The first unindented line, as always, starts the body instead:
 
 ```markdown
-- alternative: annotate `bookVisit` as the ticket asked — which would be a
-  silent no-op
-- why: Spring AOP ignores self-invoked private methods.
+- alternative: commit inside `book_visit` as the ticket asked — which would
+  leave a partial write
+- why: the handler owns the unit of work.
 ```
 
-reads as `alternative: annotate \`bookVisit\` as the ticket asked — which would be a silent no-op`.
+reads as `alternative: commit inside \`book_visit\` as the ticket asked — which would leave a partial write`.
 
 Bodies may carry the same inline tokens as any other body on the page:
 `{{snippet:path:12-30|caption}}`, `{{diff:path@<sha>|caption}}`, `{{difflink:path@<sha>}}`.

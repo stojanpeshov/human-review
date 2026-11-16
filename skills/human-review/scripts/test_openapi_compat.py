@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """The contract tab's affected-operation list, pinned — because it fails silently.
 
-The failure this guards against left no mark on the page. `openapi-compat.py` built its
-list out of OpenAPITools/openapi-diff's `changedOperations` key, which is computed one
-`paths` entry at a time and does not follow a `$ref`. On the change that exposed it the
-whole delta lived in `components.schemas`, the `paths` section was byte-identical, and
-the tab reported **4** affected operations behind a confident COMPATIBLE seal. Eleven had
-moved. Nothing looked wrong: the four rows that were there rendered perfectly.
+The failure this guards against left no mark on the page. `openapi-compat.py` once built
+its list out of a differ that reads one `paths` entry at a time and does not follow a
+`$ref`. On the change that exposed it the whole delta lived in `components.schemas`, the
+`paths` section was byte-identical, and the tab reported **4** affected operations behind
+a confident COMPATIBLE seal. Eleven had moved. Nothing looked wrong: the four rows that
+were there rendered perfectly.
 
 That shape — a list that is right about what it shows and silent about what it drops — is
 exactly what a test has to hold, because no reviewer can catch it by reading the page. So:
@@ -15,8 +15,7 @@ exactly what a test has to hold, because no reviewer can catch it by reading the
     `$ref` topology (`OwnerDto -> PetDto -> VisitDto`, three levels of nesting);
   * every one of them rendering its *actual* added fields, not an empty row — a list that
     is long but blank is the same lie with more scrolling;
-  * the honest-degradation path: with `oasdiff` gone the seal must stop claiming to be
-    the whole story.
+  * the honest failure: with `oasdiff` gone there is no verdict at all, never a guess.
 
 Run it directly (`python3 test_openapi_compat.py`) or under pytest. The oasdiff-backed
 tests skip when the binary is not installed; the rest never touch a subprocess.
@@ -288,7 +287,7 @@ def test_every_operation_the_schema_change_reaches_is_listed():
     )
     # The six that a paths-only differ cannot see are the reason this test exists.
     assert TRANSITIVE <= listed
-    assert report["complete"] is True and report["source"] == "oasdiff"
+    assert report["source"] == "oasdiff"
 
 
 def test_optional_additions_stay_non_breaking():
@@ -353,56 +352,47 @@ def test_every_listed_operation_draws_the_fields_that_moved():
         assert "vetId" in drawn, f"{key} does not draw vetId, which every one of them gains"
 
 
-# ── honest degradation ───────────────────────────────────────────────────────────
-def test_a_list_that_may_be_short_never_gets_a_clean_seal():
-    """The fallback engine's list is a lower bound; the seal has to say so on its face."""
-    partial = {"state": oac.COMPATIBLE, "breaks": [], "deprecated": [], "elsewhere": [],
-               "additive": [{"method": "GET", "path": "/api/visits", "note": "changed"}],
-               "complete": False, "source": f"openapi-diff {oac.VERSION}"}
-    fragment = oac.render(partial, "provenance", "")
-
-    seal = re.search(r'oac-seal">([^<]+)', fragment).group(1)
-    assert seal != "COMPATIBLE", "a bare COMPATIBLE seal over a list we know can be short"
-    assert "PARTIAL" in seal, seal
-    assert "oac-incomplete" in fragment, "no band explaining why the list may be short"
-    assert "brew install oasdiff" in fragment, "the band does not say how to fix it"
-    assert "$ref" in fragment, "the band does not say what the fallback cannot follow"
-
-    whole = oac.render({**partial, "complete": True}, "provenance", "")
-    assert re.search(r'oac-seal">([^<]+)', whole).group(1) == "COMPATIBLE"
-    assert "oac-incomplete" not in whole, "the band shows up when the list is complete"
-
-
+# ── honest failure ───────────────────────────────────────────────────────────────
 def test_no_changes_does_not_claim_two_different_specs_are_identical():
     """A reworded description moves the spec without moving the contract. Both halves of
     that sentence have to survive, or the seal contradicts the tab next to it."""
     moved = oac.render({"state": oac.NO_CHANGES, "breaks": [], "additive": [],
-                        "deprecated": [], "elsewhere": [], "complete": True,
-                        "identical": False}, "provenance", "")
+                        "deprecated": [], "elsewhere": [],
+                        "identical": False}, "provenance")
     assert "structurally identical" not in moved
     assert "The specs differ" in moved
 
     same = oac.render({"state": oac.NO_CHANGES, "breaks": [], "additive": [],
-                       "deprecated": [], "elsewhere": [], "complete": True,
-                       "identical": True}, "provenance", "")
+                       "deprecated": [], "elsewhere": [],
+                       "identical": True}, "provenance")
     assert "structurally identical" in same
 
 
-def test_the_fallback_engine_declares_itself_incomplete():
-    """Whatever `read_report` returns, it must never claim to be the whole list."""
-    result = oac.read_report({"changedOperations": [], "newEndpoints": [],
-                              "missingEndpoints": [], "incompatible": False})
-    assert result["complete"] is False
-
-
-def test_missing_oasdiff_is_a_fallback_not_a_crash():
+def test_missing_oasdiff_fails_clearly_instead_of_guessing():
+    """oasdiff is the only differ: without it there is no list to print, and `[]` would
+    read as "nothing changed". The run stops, naming the binary and how to get it."""
     saved = oac.OASDIFF
     try:
         oac.OASDIFF = "oasdiff-that-is-not-installed"
-        assert oac.oasdiff_changelog(Path("a.yaml"), Path("b.yaml")) is None
+        try:
+            oac.oasdiff_changelog(Path("a.yaml"), Path("b.yaml"))
+        except SystemExit as stop:
+            said = str(stop.code)
+        else:
+            raise AssertionError("a missing oasdiff produced a changelog")
+        assert "oasdiff-that-is-not-installed" in said and "brew install oasdiff" in said
         assert oac.oasdiff_version() is None
     finally:
         oac.OASDIFF = saved
+
+
+def test_the_cli_exits_non_zero_without_oasdiff():
+    with tempfile.TemporaryDirectory() as tmp:
+        base, head = specs(Path(tmp))
+        proc = compat(str(base), str(head), "--state",
+                      OASDIFF_BIN="oasdiff-that-is-not-installed")
+    assert proc.returncode != 0
+    assert "oasdiff" in proc.stderr and not proc.stdout.strip(), proc.stdout
 
 
 # ── the one line at the top of the tab ───────────────────────────────────────────
@@ -421,7 +411,7 @@ def _panel_class(fragment: str) -> str:
 
 def _result(state, breaks=(), additive=(), **extra):
     return {"state": state, "breaks": list(breaks), "additive": list(additive),
-            "deprecated": [], "elsewhere": [], "complete": True, "source": "oasdiff",
+            "deprecated": [], "elsewhere": [], "source": "oasdiff",
             **extra}
 
 
@@ -506,7 +496,7 @@ def test_one_break_among_additions_counts_as_one_break():
     text = _panel_text(oac.panel(result))
     assert text.startswith("Breaking change · 1 endpoint broken ·"), text
     # The INFO entries are not dropped: the operation's compatible movement lists them.
-    fragment = oac.render(result, "provenance", "")
+    fragment = oac.render(result, "provenance")
     assert re.search(r'What breaks <span class="oac-count">1<', fragment), fragment
     assert "5 compatible changes besides the break above" in fragment
     # A WARN entry is breaking too — oasdiff's own `breaking` command is level >= 2.
@@ -538,22 +528,13 @@ def test_nothing_moved_says_so_and_gets_out_of_the_way():
     assert "0 endpoints changed for a caller" in _panel_text(moved)
 
 
-def test_the_panel_credits_only_the_differ_that_actually_ran():
-    """With oasdiff installed the Java tool is never invoked; crediting it would be a
-    check that did not happen. The fallback is the other way round."""
+def test_the_panel_credits_the_differ_that_ran():
     with_oasdiff = oac.panel(_result(oac.COMPATIBLE, additive=[_op("GET", "/api/o", 1)]))
-    assert "OpenAPITools/openapi-diff" not in with_oasdiff
     assert "github.com/oasdiff/oasdiff" in with_oasdiff
-
-    fallback = _result(oac.COMPATIBLE, source=f"openapi-diff {oac.VERSION}", complete=False,
-                       additive=[{"method": "GET", "path": "/api/owners", "note": "changed"}])
-    text = _panel_text(oac.panel(fallback))
-    assert "OpenAPITools/openapi-diff" in text
-    assert "oasdiff" in text and "lower bound" in text, (
-        "a count from a list that cannot follow a $ref must not look whole")
     # An operation nobody itemised is still one endpoint changed, not zero.
-    assert "1 endpoint changed" in text
-
+    text = _panel_text(oac.panel(_result(
+        oac.COMPATIBLE, additive=[{"method": "GET", "path": "/api/owners", "note": "changed"}])))
+    assert "1 endpoint changed" in text, text
 
 
 def test_the_band_names_one_differ_and_it_is_not_ours():
@@ -573,7 +554,7 @@ def test_the_band_names_one_differ_and_it_is_not_ours():
     source = COMPAT.read_text(encoding="utf-8")
     for gone in ("our_verdict", "cross_check", "--no-cross-check"):
         assert gone not in source, gone
-    band_code = source[source.index("def panel("):source.index("# ── the tool's markdown")]
+    band_code = source[source.index("def panel("):source.index("# ── the tool's text")]
     assert "disputed" not in band_code.lower(), "a second differ is arguing with the tool again"
 
 
@@ -599,7 +580,7 @@ def test_no_number_in_the_panel_is_typed_into_the_content_file():
     """The regression this replaced: `"25 changes, none breaking"` sat in content.json.
     Nothing in the generator may contain a literal count."""
     source = COMPAT.read_text(encoding="utf-8")
-    body = source[source.index("def panel("):source.index("# ── the tool's markdown")]
+    body = source[source.index("def panel("):source.index("# ── the tool's text")]
     # "0 endpoints" is allowed: it is the no-change state's own honest constant, and it is
     # guarded by `state == NO_CHANGES`, not by somebody remembering to retype it.
     assert not re.search(r"[1-9]\d* (change|endpoint)", body), "a count is hardcoded in the panel"

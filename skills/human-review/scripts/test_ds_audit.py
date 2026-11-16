@@ -373,12 +373,6 @@ def test_the_digest_ignores_where_an_element_sits():
     assert ds._digest(a) == ds._digest(b)
 
 
-def test_angular_state_classes_never_reach_the_digest():
-    """`ng-touched` flips when the capture happens to focus a field. Two runs of the same
-    page would then differ, and the before/after comparison is noise from the first row."""
-    assert "ng-(untouched|touched|pristine|dirty|valid|invalid" in ds.SNAPSHOT_JS
-
-
 # ── pixels: corroboration, cropped on the element ─────────────────────────────────
 
 def _png(path, blocks, size=(200, 120), bg=(255, 255, 255)):
@@ -1341,8 +1335,6 @@ def test_an_element_is_named_by_its_accessible_name_never_a_kit_counter():
     assert ds.element_name({"element": {"tag": "input", "id": "lastName"}}) == "lastName"
     assert "aria-labelledby" in ds.SNAPSHOT_JS and "!el.contains(l)" in ds.SNAPSHOT_JS
     assert "AUTO_ID.test(i) ? '' : i" in ds.SNAPSHOT_JS
-    # Angular's per-build animation namespace is not a difference between two builds.
-    assert "tns-[\\w-]+" in ds.SNAPSHOT_JS
     reg = _combo_registry()
     lone = control("s", "div", "role=switch", id="mat-slide-toggle-2", aria_role="switch",
                    selector="#mat-slide-toggle-2", label="Notify me")

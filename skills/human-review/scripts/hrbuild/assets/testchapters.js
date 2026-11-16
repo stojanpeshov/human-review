@@ -70,7 +70,7 @@
     return w.length ? w[0].charAt(0).toUpperCase() + w[0].slice(1)
       + (w.length > 1 ? ' ' + w.slice(1).join(' ') : '') : name;
   }
-  // `OwnerListTest.java` -> `.java`, `add-visit.component.spec.ts` -> `.spec.ts`: the
+  // `test_owners.py` -> `.py`, `add-visit.component.spec.ts` -> `.spec.ts`: the
   // same face the card's own file links wear.
   function ext(file) {
     var m = /((?:\.(?:spec|test|e2e-spec|e2e|cy|it))?\.[A-Za-z0-9]+)$/i.exec(file || '');
@@ -234,10 +234,10 @@
     });
   }
 
-  // Two rows of one chapter with the same name - `getAll` in OwnerTest, PetTest and
-  // VisitTest; "should create" in two component specs - read as one test listed twice,
+  // Two rows of one chapter with the same name - `test_get_all` in three test modules;
+  // "should create" in two component specs - read as one test listed twice,
   // since a row names its file by extension only. Where a name repeats among the rows on
-  // show, the file link says the file instead: `OwnerTest.java`, `visit-edit….spec.ts` (the
+  // show, the file link says the file instead: `test_owners.py`, `visit-edit….spec.ts` (the
   // name up to its first dot, then the extension), the whole path on its hover as ever.
   // Only there, so a card of distinct names keeps its narrow column.
   function shortFile(file) {
@@ -259,8 +259,6 @@
       var clash = shown.indexOf(r) >= 0 && (by[k] || []).length > 1;
       var face = clash ? shortFile(r.dataset.file) : tw.dataset.face;
       if (tw.textContent !== face) tw.textContent = face;
-      // A longer name fills the file column: the DB-fixture dot cannot slide into it.
-      if (clash) tw.dataset.clash = 'yes'; else delete tw.dataset.clash;
     });
   }
 

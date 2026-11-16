@@ -601,9 +601,8 @@ def _finding_refs(f) -> str:
 def _ref_link(r) -> str:
     """`VetRestController.java`, linked to lines 96-100, with its path on hover.
 
-    The same trade a diff header makes: a repo-relative Java path spends five segments on
-    module, `src/main/java` and the org package before it reaches the one word that says
-    which file this is, and a line of three such references is a wall no reader parses.
+    The same trade a diff header makes: a deep repo-relative path spends its segments on
+    folders before it reaches the one word that says which file this is, and a line of three such references is a wall no reader parses.
     The path is not dropped, it is moved to the tooltip — and a file at the repo root has
     no path to move, so it gets no tooltip repeating its own name.
 
@@ -2655,12 +2654,11 @@ def format_only_hunk(removed: list[str], added: list[str]) -> tuple[int, bool] |
     return len(removed), len(removed) != len(added)
 
 
-#: A constant declared on an added line, and the value it names: Java/Kotlin
-#: `static final String NAME = "…";` / `const val NAME = …`, TS/JS `const NAME = '…'` /
-#: `readonly NAME = …`, Python `NAME = "…"` at the start of a line.
+#: A constant declared on an added line, and the value it names: Python `NAME = "…"` at
+#: the start of a line (`NAME: Final[str] = "…"` too), TS/JS `const NAME = '…'` /
+#: `readonly NAME = …`.
 _CONST_DECL = re.compile(
-    r"""(?:\b(?:static\s+final|final\s+static|const\s+val|const|readonly)\s+"""
-    r"""(?:[\w<>\[\],.? ]+?\s+)?|^\s*)(?P<name>[A-Z][A-Z0-9_]{2,})\s*(?::\s*[\w<>\[\]]+\s*)?="""
+    r"""(?:\b(?:const|readonly)\s+|^\s*)(?P<name>[A-Z][A-Z0-9_]{2,})\s*(?::\s*[\w<>\[\]]+\s*)?="""
     r"""\s*(?P<value>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`[^`]*`|-?\d[\w.]*)\s*;?\s*$""")
 
 
@@ -3778,8 +3776,8 @@ SNIPPET_LINES = 12
 #: The most lines a one-line anchor is widened to when it sits inside a longer statement.
 STATEMENT_LINES = 6
 #: The languages whose statements continue on lines that open with `.foo()` or `)`.
-_STATEMENT_SUFFIXES = frozenset((".java", ".kt", ".kts", ".ts", ".tsx", ".js", ".jsx",
-                                 ".mjs", ".cs", ".scala", ".groovy", ".swift", ".go", ".dart"))
+_STATEMENT_SUFFIXES = frozenset((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cs", ".swift", ".go",
+                                 ".dart"))
 #: A line that continues the one above it: `.toList();`, `?.x`, `)`, `&& b`, `+ "x"`.
 _CONT_START = re.compile(r"^(?:\.\w|\?\.|\)|\]|\}\s*\)|&&|\|\||\?\s|:\s|->|=>|\+\s)")
 #: A line the statement goes on after: it ends in `(`, `,`, `.`, `=`, an operator.

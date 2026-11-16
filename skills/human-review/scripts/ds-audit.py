@@ -66,14 +66,7 @@ SNAPSHOT_JS = r"""
 () => {
   const MAX = 4000;
 
-  // Angular writes validity and touch state into the class list. Those flip on a
-  // stray focus and would report every input as "changed" between two runs. And
-  // `ng-tns-c<hash>-<n>` is the animation namespace stamped per component *build*: two
-  // builds of one template carry two hashes, so every node under it read as replaced.
-  const VOLATILE = /^(ng-(untouched|touched|pristine|dirty|valid|invalid|star-inserted|tns-[\w-]+)|cdk-(focused|mouse-focused|keyboard-focused|program-focused)|mat-focus-indicator|_ng)/;
-
-  const classesOf = (el) =>
-    Array.from(el.classList).filter((c) => !VOLATILE.test(c)).sort();
+  const classesOf = (el) => Array.from(el.classList).sort();
 
   // A widget the design system could plausibly stand in for. Hidden inputs and buttons
   // are not "fields"; a submit button is not a combo in disguise.
@@ -178,7 +171,7 @@ SNAPSHOT_JS = r"""
       const t = node.tagName.toLowerCase();
       const ds = node.getAttribute('data-ds');
       if (idOf(node)) { parts.unshift(t + '#' + idOf(node)); break; }
-      const name = node.getAttribute('name') || node.getAttribute('formcontrolname');
+      const name = node.getAttribute('name');
       if (name) { parts.unshift(t + '[name=' + name + ']'); node = node.parentElement; continue; }
       if (ds) {
         // A `data-ds` host rarely carries an id, and an nth-of-type index would make it
@@ -219,10 +212,9 @@ SNAPSHOT_JS = r"""
 
   // What the reader is shown of a judged element: its tag, the attributes somebody wrote
   // and a short inside, as data rather than as a string. Python pretty-prints and caps it
-  // (`pretty_html`), so the cut is testable without a browser. Angular's own stamps are not
-  // markup anybody wrote: `_ngcontent-*` / `_nghost-*` scope the CSS, `ng-reflect-*` mirror
-  // bindings in a dev build, and the state classes are the VOLATILE ones dropped above.
-  const NOISE_ATTR = /^(_ngcontent|_nghost|ng-reflect-|ng-version$|style$)/;
+  // (`pretty_html`), so the cut is testable without a browser. An inline style is the
+  // framework's rendering, not markup anybody wrote.
+  const NOISE_ATTR = /^style$/;
   const SNIP_KIDS = 4;
   const shortOf = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
   const snipOf = (el, depth) => {
@@ -247,16 +239,6 @@ SNAPSHOT_JS = r"""
       if (new Set(rest.map((c) => c.tagName)).size === 1) node.more_tag = rest[0].tagName.toLowerCase();
     }
     return node;
-  };
-  // The custom elements around it, nearest first. The first one whose template holds the
-  // element is the file it was written in (`locate_source`).
-  const hostsOf = (el) => {
-    const out = [];
-    for (let p = el.parentElement; p && p !== document.body && out.length < 8; p = p.parentElement) {
-      const t = p.tagName.toLowerCase();
-      if (t.includes('-')) out.push(t);
-    }
-    return out;
   };
 
   const out = [];
@@ -284,7 +266,7 @@ SNAPSHOT_JS = r"""
       tag: t,
       id: rawIdOf(el) || null,
       auto_id: !!rawIdOf(el) && !idOf(el),
-      name: el.getAttribute('name') || el.getAttribute('formcontrolname') || null,
+      name: el.getAttribute('name') || null,
       type: t === 'input' ? (el.getAttribute('type') || 'text').toLowerCase() : null,
       aria_role: el.getAttribute('role') || null,
       cls: classesOf(el),
@@ -305,7 +287,6 @@ SNAPSHOT_JS = r"""
              w: Math.round(r.width), h: Math.round(r.height) },
       text: text,
       html: judged ? snipOf(el, 2) : null,
-      hosts: judged ? hostsOf(el) : [],
     });
   }
   return {
@@ -772,8 +753,7 @@ def _finding(side: str, n: dict, verdict: str, role: dict | None, message: str,
         "ds": n.get("ds"),
         "element": {"tag": n["tag"], "id": n.get("id"), "name": n.get("name"),
                     "label": n.get("label") or "", "sig": n["sig"],
-                    **({"kit": n["kit"]} if n.get("kit") else {}),
-                    **({"hosts": n["hosts"]} if n.get("hosts") else {})},
+                    **({"kit": n["kit"]} if n.get("kit") else {})},
         "selector": n["selector"],
         "box": n["box"],
         "message": message,
@@ -916,169 +896,6 @@ def _a(noun: str) -> str:
     """"An Angular Material select", "A PrimeNG dropdown" — the article a sentence needs."""
     plain = re.sub(r"<[^>]+>", "", noun)
     return ("An " if plain[:1].lower() in "aeiou" else "A ") + noun
-
-
-# ── where it was written ──────────────────────────────────────────────────────────
-#
-# The screenshot shows the element as rendered; the fix happens in a template. Angular
-# makes the mapping cheap: every component names its selector and its template, and the
-# page records which custom elements sit around the control (`hosts`, nearest first). The
-# first of those whose template has an opening tag matching the control — on its id, its
-# name, its formControlName — is the file and the line. A control projected into a child
-# component is not in that child's template, so the search keeps climbing.
-
-_COMPONENT_DECL = re.compile(r"@Component\s*\(\s*\{")
-_SELECTOR_DECL = re.compile(r"""\bselector\s*:\s*(['"`])(.+?)\1""", re.S)
-_TEMPLATE_URL = re.compile(r"""\btemplateUrl\s*:\s*(['"`])(.+?)\1""")
-_INLINE_TEMPLATE = re.compile(r"\btemplate\s*:\s*`")
-
-
-def template_index(roots: list[Path]) -> dict[str, dict]:
-    """Element selector → `{"path", "line0", "text"}`: the template that component renders.
-
-    `line0` is the line the template text starts after — zero for a `templateUrl` file,
-    the backtick's line for an inline `template:` — so a match inside it is reported at
-    the line a reader would find it on."""
-    out: dict[str, dict] = {}
-    for root in roots:
-        if not root.exists():
-            continue
-        files = [root] if root.is_file() else sorted(
-            p for p in root.rglob("*.ts")
-            if "node_modules" not in p.parts and not p.name.endswith(".spec.ts"))
-        for ts in files:
-            try:
-                text = ts.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            for m in _COMPONENT_DECL.finditer(text):
-                end = text.find("export class", m.end())
-                chunk = text[m.end():end if end > 0 else None]
-                sel = _SELECTOR_DECL.search(chunk)
-                if not sel:
-                    continue
-                tags = [s.strip() for s in sel.group(2).split(",")
-                        if re.fullmatch(r"[a-z][\w]*-[\w-]*", s.strip())]
-                url = _TEMPLATE_URL.search(chunk)
-                inline = _INLINE_TEMPLATE.search(chunk)
-                if url:
-                    path = (ts.parent / url.group(2)).resolve()
-                    try:
-                        entry = {"path": path, "line0": 0,
-                                 "text": path.read_text(encoding="utf-8", errors="replace")}
-                    except OSError:
-                        continue
-                elif inline:
-                    start = m.end() + inline.end()
-                    close = text.find("`", start)
-                    entry = {"path": ts.resolve(), "line0": text.count("\n", 0, start),
-                             "text": text[start:close if close > 0 else None]}
-                else:
-                    continue
-                for t in tags:
-                    out.setdefault(t, entry)
-    return out
-
-
-def _identity(f: dict) -> list[tuple[str, str | None]]:
-    """What a template would have written to make this element: the attributes that name
-    it. Read off the rendered markup when there is some, which knows `formcontrolname`
-    from `name`; else off the snapshot's own fields."""
-    el = f["element"]
-    snip = f.get("snippet") or {}
-    ident = []
-    if snip.get("from") == "rendered":
-        head = snip["html"].split("\n", 1)[0]
-        rendered = {}
-        for k, v in re.findall(r'\s([\w:.-]+)="([^"]*)"', head):
-            rendered.setdefault(k.lower(), html.unescape(v))
-        for k in ("id", "name", "formcontrolname"):
-            v = rendered.get(k)
-            if v and not (k == "id" and AUTO_ID.match(v)):
-                ident.append((k, v))
-    else:
-        # The snapshot's `name` is `name` or `formcontrolname`, whichever was there.
-        if el.get("id") and not AUTO_ID.match(el["id"]):
-            ident.append(("id", el["id"]))
-        if el.get("name"):
-            ident += [("name", el["name"]), ("formcontrolname", el["name"])]
-    if el.get("kit") == "mat-sort":
-        ident.append(("matsort", None))
-    return ident
-
-
-def _attr_written(attrs: str, name: str, value: str | None) -> bool:
-    """A static attribute in a template's opening tag. `[name]`, `[attr.id]`, `#name` and
-    `data-name` are other attributes, so the name may not follow `[ ( . # -` or a letter."""
-    pat = rf"(?<![\w\[\(.*#-]){re.escape(name)}"
-    pat += (rf"""\s*=\s*["']{re.escape(value)}["']""" if value is not None
-            else r"(?![\w-])")
-    return bool(re.search(pat, attrs, re.I))
-
-
-def _match_in(entry: dict, tag: str, ident, *, identified_only: bool) -> dict | None:
-    hits = []
-    for m in re.finditer(rf"""<{re.escape(tag)}(?=[\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>""",
-                         entry["text"], re.I):
-        score = sum(3 for k, v in ident if _attr_written(m.group(1), k, v))
-        line = entry["line0"] + entry["text"].count("\n", 0, m.start()) + 1
-        hits.append((score, line))
-    if not hits:
-        return None
-    best = max(s for s, _ in hits)
-    if identified_only and best == 0:
-        return None
-    lines = [ln for s, ln in hits if s == best]
-    return {"path": entry["path"], "line": lines[0], "matches": len(lines)}
-
-
-def locate_source(f: dict, index: dict, repo_root: Path,
-                  changed: list[str] | tuple = ()) -> dict | None:
-    """`{"file", "line", "via", "matches"}` — where this element was written — or None.
-
-    `via` is the component whose template it was found in, or `search` when the page did
-    not say (a capture older than `hosts`) and every template was searched for an opening
-    tag that names the element; then only a match on an id or a name counts, the changed
-    templates are tried first, and `matches` says when more than one tag fits equally."""
-    el = f["element"]
-    tag = "table" if el.get("kit") == "mat-sort" else el["tag"]
-    ident = _identity(f)
-    hit, via = None, None
-    for h in el.get("hosts") or []:
-        entry = index.get(h)
-        if entry and h != tag:
-            hit = _match_in(entry, tag, ident, identified_only=False)
-            if hit:
-                via = h
-                break
-    if hit is None and ident:
-        entries = list({id(e): e for e in index.values()}.values())
-        rel = lambda e: _rel(e["path"], repo_root)
-        entries.sort(key=lambda e: (rel(e) not in set(changed), rel(e)))
-        for entry in entries:
-            hit = _match_in(entry, tag, ident, identified_only=True)
-            if hit:
-                via = "search"
-                break
-    if hit is None:
-        return None
-    return {"file": _rel(hit["path"], repo_root), "line": hit["line"], "via": via,
-            "matches": hit["matches"]}
-
-
-def _rel(path: Path, root: Path) -> str:
-    try:
-        return str(Path(path).resolve().relative_to(Path(root).resolve()))
-    except ValueError:
-        return str(path)
-
-
-def attach_sources(screen: dict, index: dict, repo_root: Path, changed=()) -> dict:
-    """Give every drawn verdict of a screen its `source` (or None: not found)."""
-    for f in screen["findings"]:
-        if f["verdict"] in DRAWN:
-            f["source"] = locate_source(f, index, repo_root, changed)
-    return screen
 
 
 # ── the comparison: DOM decides, pixels corroborate ───────────────────────────────
@@ -1695,8 +1512,6 @@ details.dsa-why.ok[open] > summary { opacity: .8; }
 .dsa-snip .srcbar { margin-bottom: .35rem; }
 .dsa-snip pre.code { padding-left: .7rem; }
 details.dsa-why.ok .dsa-snip { opacity: .85; }
-.dsa-nosrc { font-size: .78rem; opacity: .75; font-style: italic; }
-.dsa-srcnote { font-size: .72rem; opacity: .7; cursor: help; }
 .dsa-table tr.dsa-more.flash td { background: color-mix(in srgb, var(--dsa-hot) 16%, transparent); }
 :root { --dsa-ok: #1f7a45; --dsa-bad: #c1121f; --dsa-new: #1a4fa0; --dsa-hot: #f0a500;
         --dsa-label-fg: #ffffff; --dsa-frame: #a23fd6; --dsa-warn: #946200; }
@@ -1756,7 +1571,7 @@ HL_JS = """<script data-hr-swap="keep">
     scope.querySelectorAll('.dsa-mark.hot').forEach(function (m) { m.classList.remove('hot'); });
     marks(scope, tr.getAttribute('data-find')).forEach(function (m) { m.classList.add('hot'); });
   });
-  // A mark on the picture opens what its row says about it: the markup, the template line,
+  // A mark on the picture opens what its row says about it: the markup and
   // the rule. The row may be off-screen under a tall shot, so it is brought into view and
   // flashed once, the way a hover on the row lights the mark.
   document.addEventListener('click', function (ev) {
@@ -1972,15 +1787,6 @@ def number_findings(findings: list[dict], frames: dict) -> tuple[dict, bool]:
     return nums, len(on_picture) > 1
 
 
-def _snippets_module():
-    """The page's snippet machinery — the source bar and its two handles — imported the
-    way `page_base_commit` imports the page base: the package sits next to this file."""
-    if str(HERE) not in sys.path:
-        sys.path.insert(0, str(HERE))
-    from hrbuild.shared import snippets
-    return snippets
-
-
 def _highlight(text: str) -> str:
     """Token-coloured the way every other quoted block on the page is: Pygments at build
     time, into the `pre.code` classes the page's snippet stylesheet colours."""
@@ -1993,63 +1799,22 @@ def _highlight(text: str) -> str:
     return highlight(text, HtmlLexer(), HtmlFormatter(nowrap=True)).rstrip("\n")
 
 
-def _source_links(rel: str, root: Path, line: int, base: str) -> str:
-    """The VS Code and github.com handles of a source bar, against the audit's base — the
-    two `_snippet_links` emits for a quoted block, built from the same two functions with
-    the base passed in rather than read off the page's global. Either drops itself where
-    it could not open what it promises; their notes on stderr would be about the review
-    page, not this step, so they are kept out of its log."""
-    import contextlib
-    import io
-    s = _snippets_module()
-    if not all(hasattr(s, n) for n in ("diff_link_html", "_github_compare_link",
-                                       "_shown_in_compare", "_icon")):
-        return ""
-    with contextlib.redirect_stderr(io.StringIO()):
-        vsc = s.diff_link_html(rel, base, root, face=s._icon("VSC"), line=line)
-        at = line if s._shown_in_compare(rel, base, str(root), line) else None
-        gh = s._github_compare_link(rel, base.removeprefix("origin/"), root, line=at,
-                                    face=s._icon("GH"))
-    return vsc + gh
-
-
-def source_bar(f: dict, root: Path | None, base: str | None) -> str:
-    """The header over the element's markup: the template it was written in, at the line,
-    with the page's own two handles — or, when no template was found, that sentence."""
+def source_bar(f: dict) -> str:
+    """The header over the element's markup: whether it is the markup as rendered or a tag
+    rebuilt from an older capture's id and name."""
     snip = f.get("snippet") or {}
     badge = ('<span class="code-badge" data-diff="unchanged" data-tip="The element as the '
-             'browser rendered it, trimmed; the file beside it is where it was written">'
-             'as rendered</span>' if snip.get("from") == "rendered" else
+             'browser rendered it, trimmed">as rendered</span>'
+             if snip.get("from") == "rendered" else
              '<span class="code-badge" data-diff="unchanged" data-tip="This capture predates '
              'the markup being recorded: the tag is rebuilt from its id and name">'
              'rebuilt</span>')
-    src = f.get("source")
-    if not src:
-        return (f'<div class="srcbar"><span class="dsa-nosrc">no template under the audited '
-                f'source writes this element</span>{badge}</div>')
-    rel, line = src["file"], src["line"]
-    note = ""
-    if src.get("matches", 1) > 1:
-        note = (f'<span class="dsa-srcnote" data-tip="More than one opening tag there fits '
-                f'equally; this is the first">1 of {src["matches"]} '
-                f'&lt;{html.escape(f["element"]["tag"])}&gt;</span>')
-    path = Path(root or ".") / rel
-    # Whatever bar every other quoted block wears. The page's builder has carried the two
-    # handles as `links`, and is dropping them for a bar whose file name is the one link;
-    # this follows whichever it is rather than keeping a second opinion about it.
-    import inspect
-    build_bar = _snippets_module()._extract_module().srcbar_html
-    takes_links = "links" in inspect.signature(build_bar).parameters
-    links = (_source_links(rel, Path(root), line, base)
-             if takes_links and root and base and path.is_file() else "")
-    return build_bar(f"vscode://file/{path.resolve()}:{line}:1", rel, str(line),
-                     badge + note, *([links] if takes_links else []))
+    return f'<div class="srcbar">{badge}</div>'
 
 
-def detail_html(f: dict, registry: dict, screen: str, root: Path | None,
-                base: str | None) -> str:
+def detail_html(f: dict, registry: dict, screen: str) -> str:
     """What opens under a drawn verdict's row: the rule in one sentence, then the element's
-    markup under the bar naming the template line it came from. A gap opens by default —
+    markup as the browser rendered it. A gap opens by default —
     it is the product; a component that is right stays shut, one click away."""
     rule = f.get("rule") or rule_html(f, registry, screen)
     snip = f.get("snippet") or snippet_of({"tag": f["element"]["tag"],
@@ -2058,13 +1823,13 @@ def detail_html(f: dict, registry: dict, screen: str, root: Path | None,
                                             "ds": f.get("ds")})
     f = dict(f, snippet=snip)
     bad = f["verdict"] in ("bare", "foreign") and not f.get("resolved")
-    figure = (f'<figure class="snippet dsa-snip">{source_bar(f, root, base)}'
+    figure = (f'<figure class="snippet dsa-snip">{source_bar(f)}'
               f'<pre class="code lang-html"><code>{_highlight(snip["html"])}</code></pre>'
               "</figure>")
     if bad:
         return (f'<details class="dsa-why bad" open><summary><span class="dsa-whyk">why'
                 f'</span> {rule}</summary>{figure}</details>')
-    return (f'<details class="dsa-why ok"><summary>markup and template</summary>'
+    return (f'<details class="dsa-why ok"><summary>markup</summary>'
             f'<p class="dsa-rule">{rule}</p>{figure}</details>')
 
 
@@ -2371,7 +2136,6 @@ NOTHING_TIP = "Changed, but no control on it is, or should be, a design-system c
 
 
 def render_screen(screen: dict, assets_prefix: str, build, registry: dict | None = None,
-                  root: Path | None = None, base: str | None = None,
                   browsers: list | None = None) -> str:
     findings = screen["findings"]
     pages = {s: screen["sides"][s]["page"] for s in ("new", "old")}
@@ -2454,10 +2218,10 @@ def render_screen(screen: dict, assets_prefix: str, build, registry: dict | None
                if f.get("history") else "") + '</td>'
             f'<td>{html.escape(st.get("status", "\u2014"))}</td>'
             f'<td>{churn_txt}</td></tr>')
-        # The element itself, under its row: the markup, the template line, the rule.
+        # The element itself, under its row: the markup and the rule.
         rows.append(
             f'<tr class="dsa-more {cls}" data-find="{html.escape(f["id"])}"><td></td>'
-            f'<td colspan="6">{detail_html(f, registry or {}, screen["screen"], root, base)}'
+            f'<td colspan="6">{detail_html(f, registry or {}, screen["screen"])}'
             "</td></tr>")
 
     counts = screen["summary"]
@@ -2772,18 +2536,12 @@ def regression_tip(result: dict) -> str:
             + "".join(f"<li>{r}</li>" for r in rows) + "</ul>")
 
 
-def render(result: dict, assets_prefix: str, *, root: Path | None = None,
-           base: str | None = None) -> str:
+def render(result: dict, assets_prefix: str) -> str:
     """The fragment: the registry once, then one three-state viewer per screen.
 
     The viewer is the report\u2019s own \u2014 the Diff / New-Old control built last round
     for exactly this shape of content. A second one with different ergonomics on the same
     page would be the mistake worth failing a build over.
-
-    `root` is the checkout the templates a verdict points at live in, and `base` the
-    commit the branch is compared with; with both, each template line gets the page's two
-    handles (the diff in VS Code, the change on github.com). Without, the bar still links
-    the file at its line.
     """
     build = _build_review()
     counts = result["summary"]
@@ -2835,7 +2593,7 @@ def render(result: dict, assets_prefix: str, *, root: Path | None = None,
         # Screens with a verdict first — a gap, a regression, a component — so the tab
         # opens on a marked-up picture; the changed-but-nothing-to-judge ones trail.
         + "".join(render_screen(sc, assets_prefix, build, result.get("registry") or {},
-                                root, base, result.get("browsers"))
+                                result.get("browsers"))
                   for sc in sorted(touched, key=screen_has_nothing_to_judge))
         + f'<script type="application/json" class="ds-audit-data">{payload}</script>'
         + HL_JS + "</div>")
@@ -3369,10 +3127,9 @@ def main():
     commits = {"new": args.commit_new or _git("rev-parse", "HEAD"),
                "old": args.commit_old or page_base_commit(args.base_ref)}
     sources = [Path(x) for x in args.source]
-    repo_root = Path(_git("rev-parse", "--show-toplevel") or Path.cwd())
     if args.rerender:
         rerender(Path(args.rerender), Path(args.assets), args.asset_prefix, Path(args.out),
-                 commits, sources=sources, repo_root=repo_root)
+                 commits)
         return
 
     assets = Path(args.assets)
@@ -3486,8 +3243,6 @@ def main():
     # whichever form happens to render it, and a screen that renders none of them is
     # still audited against the ones that exist.
     registry = derive_registry(snaps, sources)
-    templates = template_index(sources)
-    changed = changed_files(commits["old"], sources)
 
     screens = []
     for name, stem, pair, pngs in screens_io:
@@ -3513,7 +3268,6 @@ def main():
                               sides_meta=sides_meta,
                               delta={"dom": dom, "elements": elements},
                               route=routes.get(name))
-        attach_sources(screen, templates, repo_root, changed)
         screen["pixels_differ"] = pixels_differing(pngs["old"], pngs["new"])
         if screen_touched(screen):
             screen["frames"] = change_frames(pngs["old"], pngs["new"])
@@ -3572,23 +3326,13 @@ def main():
     Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.json_out).write_text(json.dumps(result, indent=1), encoding="utf-8")
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text(render(result, args.asset_prefix, root=repo_root,
-                                     base=commits["old"] or None), encoding="utf-8")
+    Path(args.out).write_text(render(result, args.asset_prefix), encoding="utf-8")
 
     s = result["summary"]
     print(f'[ds-audit] {args.out} · {len(screens)} screen(s), '
           f'{s["new"]["bare"] + s["new"]["foreign"]} gap(s), '
           f'{s["new"]["ds"]} component(s), {len(s["regressions"])} regression(s) '
           f'→ {args.json_out}', file=sys.stderr)
-
-
-def changed_files(base: str, sources: list[Path]) -> list[str]:
-    """Repo-relative paths under `sources` that differ between `base` and HEAD — the
-    templates a source search tries first."""
-    if not base or not sources:
-        return []
-    return _git("diff", "--name-only", base, "HEAD", "--",
-                *[str(s) for s in sources]).split()
 
 
 #: Which ds-audit.py drew a fragment: a hash of this file, written into the fragment's
@@ -3613,8 +3357,7 @@ def rerender_if_stale(review: Path) -> bool:
     """Re-render `<review>/assets/ds-audit.html` (and its stylesheet) from the JSON beside
     it when this script did not draw it. True when it did. No browser, no stacks: the
     verdicts and the PNGs are the capture's, only the drawing is this file's. Each side keeps
-    the commit its capture recorded, and the template search reads the same `source` dirs
-    the step was given (`steps.dsaudit.source` in `human-review.json`)."""
+    the commit its capture recorded."""
     assets = review / "assets"
     js, frag = assets / "ds-audit.json", assets / "ds-audit.html"
     if not js.is_file():
@@ -3631,17 +3374,10 @@ def rerender_if_stale(review: Path) -> bool:
             if meta.get("commit"):
                 commits.setdefault(side, meta["commit"])
     root = Path(_git("rev-parse", "--show-toplevel", cwd=review) or review.resolve().parent)
-    try:
-        cfg = json.loads((root / "human-review.json").read_text(encoding="utf-8"))
-        sources = [root / s for s in ((cfg.get("steps") or {}).get("dsaudit") or {})
-                   .get("source") or []]
-    except (OSError, ValueError, AttributeError):
-        sources = []
     cwd = os.getcwd()
-    os.chdir(root)       # `changed_files` and the template search run git from here
+    os.chdir(root)       # the side labels ask git about the commits from here
     try:
-        rerender(js, assets, asset_prefix("assets"), frag, commits or None,
-                 sources=sources, repo_root=root)
+        rerender(js, assets, asset_prefix("assets"), frag, commits or None)
     finally:
         os.chdir(cwd)
     (assets / "ds-audit.css").write_text(CSS + "\n", encoding="utf-8")
@@ -3649,15 +3385,11 @@ def rerender_if_stale(review: Path) -> bool:
 
 
 def rerender(json_path: Path, assets: Path, prefix: str, out: Path,
-             commits: dict | None = None, *, sources: list[Path] | None = None,
-             repo_root: Path | None = None) -> None:
+             commits: dict | None = None) -> None:
     """A generator change, seen without a second pair of builds: the result JSON already
     carries every verdict, and the frames only need the two PNGs beside it. A side whose
-    commit was never recorded gets it now, from the same resolution a capture uses; a
-    drawn verdict with no `source` yet is located now, when `--source` says where."""
+    commit was never recorded gets it now, from the same resolution a capture uses."""
     result = json.loads(json_path.read_text(encoding="utf-8"))
-    templates = template_index(sources or [])
-    changed = changed_files((commits or {}).get("old", ""), sources or [])
     for sc in result["screens"]:
         if commits:
             stamp_sides(sc["sides"], commits)
@@ -3667,15 +3399,8 @@ def rerender(json_path: Path, assets: Path, prefix: str, out: Path,
             sc["pixels_differ"] = pixels_differing(old, new)
             if screen_touched(sc):
                 sc["frames"] = change_frames(old, new)
-        if templates:
-            for f in sc["findings"]:
-                if f["verdict"] in DRAWN and not f.get("source"):
-                    f.setdefault("snippet", snippet_of({**f["element"], "ds": f.get("ds")}))
-                    f["source"] = locate_source(f, templates, repo_root or Path.cwd(),
-                                                changed)
     json_path.write_text(json.dumps(result, indent=1), encoding="utf-8")
-    out.write_text(render(result, prefix, root=repo_root,
-                          base=(commits or {}).get("old") or None), encoding="utf-8")
+    out.write_text(render(result, prefix), encoding="utf-8")
     print(f"[ds-audit] re-rendered {out} from {json_path}", file=sys.stderr)
 
 

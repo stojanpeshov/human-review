@@ -11,8 +11,8 @@ derived, so it now is:
    ticket has it — and split into sentences, each with an id derived from its own words
    (`s` + 6 hex of a hash), so an edit elsewhere in the ticket does not re-key it.
 2. **The tests, right.** The tests whose per-test coverage (`testcov.py` →
-   `assets/test-coverage.json`: JaCoCo, Karma/Istanbul, V8) runs a line this PR changed,
-   with their kind (Unit/API/E2E), name, file and what the branch did to them
+   `assets/test-coverage.json`: coverage.py, Vitest and browser V8) runs a line this PR
+   changed, with their kind (Unit/API/E2E), name, file and what the branch did to them
    (`test-changes.py`). Without a coverage run, the tests the branch added or changed.
 3. **The pairing.** Mostly scripted (`match`): a sentence and a test are paired on shared
    evidence — words of the test's name and body, normalised and stemmed, a small table of
@@ -781,8 +781,8 @@ def _stamp(st: dict) -> str:
 
 
 def never_runs(st: dict) -> str:
-    """Why a test the manifest says is switched off (`test-changes.py`'s `silenced`: an
-    `@Disabled`, a `.skip`, a `@wip` tag) does not run, in the words the Tests tab's own
+    """Why a test the manifest says is switched off (`test-changes.py`'s `silenced`: a
+    `@pytest.mark.skip`, a `.skip`, a `@wip` tag) does not run, in the words the Tests tab's own
     stamps use: written that way, switched off here, or off at the base already. Empty for
     a test that runs."""
     if not st.get("silenced") or st.get("status") == "deleted":
@@ -941,8 +941,8 @@ ANNOTATIONS_MAX = 30
 
 def annotations_start(lines: list[str], line: int) -> int:
     """The first line of the annotations (tags, decorators) right above `line`, a
-    multi-line one included: run 8's `invalidInput_isBadRequest` carries its cases —
-    `"size=7", "size=0", …` — in a `@ValueSource(strings = {` four lines long, and a
+    multi-line one included: run 8's invalid-input test carried its cases — `"size=7",
+    "size=0", …` — in a decorator (`@pytest.mark.parametrize("q", [`) four lines long, and a
     window that stopped at the first line not starting with `@` read a body with no page
     size in it, so nothing tied the test to "valid page sizes SHALL be only 5, 10, 20"."""
     start, k = line, line - 1
@@ -1007,10 +1007,10 @@ good bad better worse new old first last next same different real really actuall
 data information case cases part parts point use used using work works need needs want
 app application system user users people person day days week weeks year years
 test tests spec specs it describe expect assert asserts given when then scenario feature
-void public private protected static final class return var let const await async
-function throws exception string int long boolean true false undefined this
-mock mvc perform result results status andexpect jsonpath json content type
-fixture detectchanges tobe toequal tohavetext tocontain dto entity id ids
+public private protected static class return var let const await async
+function exception string int boolean true false undefined this
+mock result results status json content type
+fixture tobe toequal tohavetext tocontain dto entity id ids
 """.split())
 
 #: Words that carry nothing but a concept: a ticket's "not choose one" is a test's
@@ -1203,12 +1203,12 @@ PASSING_THROUGH = 0.75
 # in the step definition. So a scenario is read with each step's definition under it.
 
 _STEP_LINE = re.compile(r"^\s*(Given|When|Then|And|But|\*)\s+(.+?)\s*$")
-#: A step definition: JS/TS `Then('text', …)` / `Then(/regex/, …)`, Java/Kotlin
-#: `@Then("text")`, Python `@then("text")` / `@then(parsers.parse("text"))`.
+#: A step definition: JS/TS `Then('text', …)` / `Then(/regex/, …)`, Python (pytest-bdd)
+#: `@then("text")` / `@then(parsers.parse("text"))`.
 _STEP_DEF = re.compile(
     r"""(?:^|[^\w.])@?(?:Given|When|Then|And|But|Step|defineStep|given|when|then|step)\s*\(\s*"""
     r"""(?:parsers\.\w+\(\s*)?(?:(?P<q>['"`])(?P<text>(?:\\.|(?!(?P=q))[^\\])*)(?P=q)|/(?P<rx>(?:\\.|[^/\\])+)/)""")
-_STEP_SOURCES = (".ts", ".js", ".mjs", ".java", ".kt", ".py")
+_STEP_SOURCES = (".ts", ".js", ".mjs", ".py")
 #: Lines of one step definition carried under its step, and of all of them per scenario.
 STEP_BODY_MAX = 14
 GLUE_MAX = 48
@@ -1291,7 +1291,7 @@ def gherkin_glue(root: Path, feature: str, body: list[str]) -> list[str]:
         if f not in texts:
             texts[f] = (root / f).read_text(encoding="utf-8").splitlines()
         lines = texts[f]
-        # An annotation (`@Then("…")`) opens nothing itself: the method under it does.
+        # A decorator (`@then("…")`) opens nothing itself: the function under it does.
         opens = n
         while opens < min(len(lines), n + 5) and "{" not in re.sub(
                 r"""(['"`])(?:\\.|(?!\1).)*\1""", "", lines[opens - 1]):
@@ -2194,7 +2194,7 @@ NEVER_RUN_GAP = "Paired with tests that never run (switched off): {names}. They 
 def discount_never_run(entries: list[dict], rows: list[dict]) -> list[dict]:
     """The coverage each sentence's *running* tests stand behind (Victor, 30 Oct 2026).
 
-    A test switched off — `@wip`, `@Disabled`, `.skip`, new or old (`covering_tests`'
+    A test switched off — `@wip`, `@pytest.mark.skip`, `.skip`, new or old (`covering_tests`'
     `off`) — stays paired, listed under the requirement and marked "never runs", but it
     pins nothing: the sentence is coloured by the rest of its tests, `missing` when there
     is no rest. Only ever lowers a colour; `n/a` and `narrowed` are facts about the
@@ -2420,10 +2420,10 @@ def test_rank(r: dict, paired: set) -> int:
 
 
 def test_why(r: dict) -> str:
-    """Which changed lines the test's own coverage ran — `ExceptionControllerAdvice.java:
-    56–58, 70 +2 files`: the busiest file and its first two runs of lines, the other files
-    counted. Empty when it ran none (or nothing was measured): it is the proof behind the
-    card's "runs changed code" mark, and a hover, so it stays a few words."""
+    """Which changed lines the test's own coverage ran — `handler.py: 56–58, 70 +2 files`:
+    the busiest file and its first two runs of lines, the other files counted. Empty when
+    it ran none (or nothing was measured): it is the proof behind the card's "runs changed
+    code" mark, and a hover, so it stays a few words."""
     hits = r.get("hits") or {}
     if not hits:
         return ""

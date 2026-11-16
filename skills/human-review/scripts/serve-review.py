@@ -87,7 +87,7 @@ EDITOR_OPEN = "/__editor_open__"
 # Pressing the page's own path in the footer: show that file selected in Finder. The page
 # names which of the files this server serves it is, and nothing outside that directory.
 REVEAL = "/__reveal__"
-# A package's or a Maven module's box on the Structure tab: show that folder selected in
+# A package's box on the Structure tab: show that folder selected in
 # the Explorer of the VS Code window that has the checkout, and raise it. The page names
 # the folder relative to the checkout; anything not a folder inside ROOT is refused.
 REVEAL_FOLDER = "/__reveal_folder__"
@@ -2215,24 +2215,21 @@ def parse_compose_ps(text: str) -> list[dict]:
     return rows
 
 
-# A line that says why, as against a frame of the stack trace under it. Spring Boot dies
-# on a bad datasource with eighty lines whose last is `... 28 common frames omitted`; the
-# reason is the deepest `Caused by:` above it, which is the line a red chip should show.
-_REASON = re.compile(r"caused by:|error|exception|fatal|failed|refused|denied|not found|"
+# A line that says why, as against a frame of the traceback above it. Python dies on a
+# bad database URL with a traceback whose last line is the exception and its message, and
+# that is the line a red chip should show — not a `File "…", line N` frame, nor the `^^^`
+# under one.
+_REASON = re.compile(r"error|exception|fatal|failed|refused|denied|not found|"
                      r"cannot|could not|unable to|no such", re.I)
-_FRAME = re.compile(r"^(?:at\s|\.\.\.\s|\d+\s+common frames|~\[|\^)")
+_FRAME = re.compile(r'^(?:File\s+"|Traceback \(most recent call last\)|[\^~]+$)')
 
 
 def reason_line(text: str) -> str:
-    """The line of a container's last output that best says why it died: the last
-    `Caused by:` if there is one, else the last line that sounds like an error and is not a
-    stack frame, else simply the last line."""
+    """The line of a container's last output that best says why it died: the last line
+    that sounds like an error and is not a traceback frame, else simply the last line."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     if not lines:
         return ""
-    caused = [ln for ln in lines if ln.lower().startswith("caused by:")]
-    if caused:
-        return caused[-1][:300]
     for ln in reversed(lines):
         if not _FRAME.match(ln) and _REASON.search(ln):
             return ln[:300]

@@ -4,8 +4,8 @@
 Three layers, tested where each can be wrong on its own:
 
   * `testcov.py`'s pure parts — the diff it reads, what it counts as a line worth counting,
-    and how it explains a changed line no probe can see (an annotation stands in for its
-    method's body, a repository method for its call sites, a migration for nothing);
+    and how it explains a changed line no probe can see (a function's header stands in
+    for its body, a line run at import for nothing, a migration for nothing);
   * `run-steps.py`'s wiring — the step exists, feeds the Tests tab, runs after the traced
     browser run it harvests, and is cached on what it reads;
   * `hrbuild/tabs/tests.py` — the join with the diff done at build time (aimed vs passing
@@ -42,13 +42,13 @@ rs = _load("hr_run_steps_testcov", "run-steps.py")
 
 # --------------------------------------------------------------------------- testcov.py
 
-DIFF = """diff --git a/a/Visit.java b/a/Visit.java
---- a/a/Visit.java
-+++ b/a/Visit.java
-@@ -10,0 +11,3 @@ class Visit {
-+    private Vet vet;
+DIFF = """diff --git a/a/visit.py b/a/visit.py
+--- a/a/visit.py
++++ b/a/visit.py
+@@ -10,0 +11,3 @@ class Visit:
++    vet: Vet | None = None
 +
-+    public Vet getVet() { return vet; }
++    def get_vet(self): return self.vet
 @@ -20 +23 @@
 -old
 +new
@@ -63,7 +63,7 @@ diff --git a/gone.txt b/gone.txt
 
 
 def test_the_diff_gives_new_side_lines_and_nothing_for_a_deletion():
-    assert tc.parse_diff(DIFF) == {"a/Visit.java": [11, 12, 13, 23]}
+    assert tc.parse_diff(DIFF) == {"a/visit.py": [11, 12, 13, 23]}
 
 
 def test_ranges_round_trip():
@@ -73,94 +73,28 @@ def test_ranges_round_trip():
 
 
 def test_blank_comment_brace_and_import_lines_are_not_counted():
-    for line in ("", "   ", "// note", " * javadoc", "}", "  });", "import x.Y;", "  </div>"):
+    for line in ("", "   ", "// note", " * a doc comment", "# note", "}", "  });",
+                 "import x", "  </div>"):
         assert tc.TRIVIAL.match(line), line
-    for line in ("return vet;", "@PreAuthorize(\"x\")", "<td>{{v.vet}}</td>", "private Vet vet;"):
+    for line in ("return vet", "@app.get(\"/vets\")", "<td>{vet}</td>", "vet: Vet | None = None"):
         assert not tc.TRIVIAL.match(line), line
 
 
 def test_scope_is_the_sources_minus_the_excludes():
-    src, ex = ["app/src/main/**", "web/src/app/**"], ["**/*.spec.ts", "**/generated/**"]
-    assert tc.in_scope("app/src/main/java/A.java", src, ex)
+    src, ex = ["app/src/**", "web/src/app/**"], ["**/*.spec.ts", "**/generated/**", "**/tests/**"]
+    assert tc.in_scope("app/src/activities/handler.py", src, ex)
     assert tc.in_scope("web/src/app/x/y.ts", src, ex)
     assert not tc.in_scope("web/src/app/x/y.spec.ts", src, ex)
     assert not tc.in_scope("web/src/app/generated/api.ts", src, ex)
-    assert not tc.in_scope("app/src/test/java/ATest.java", src, ex)
+    assert not tc.in_scope("app/src/tests/test_handler.py", src, ex)
 
 
-CONTROLLER = """class VetRestController {
-    private final VetRepository repo;
-
-    @PreAuthorize("hasRole('OWNER_ADMIN')")
-    public List<Vet> listVets() {
-        return repo.findAll();
-    }
-}""".splitlines()
-
-REPOSITORY = """interface VetRepository {
-    @Query(\"\"\"
-        select v from Vet v
-        \"\"\")
-    Optional<Vet> findByIdWithoutSpecialties(int id);
-}""".splitlines()
-
-
-
-
-
-
-
-
-def test_a_field_has_no_proxy_and_sql_has_no_probe():
-    assert "proxy" not in tc.classify("app/VetRestController.java", CONTROLLER, [2], {6},
-                                      lambda n: {})[0]
-    sql = tc.classify("db/V4__x.sql", ["alter table visits add vet_id int;"], [1], set(),
-                      lambda n: {})
+def test_a_type_has_no_proxy_and_sql_has_no_probe():
+    assert tc.classify("web/src/vet.ts", ["export type Vet = { id: number };"], [1], {3}) == [
+        {"file": "web/src/vet.ts", "lines": [1], "reason": "types — erased when compiled"}]
+    sql = tc.classify("db/V4__x.sql", ["alter table visits add vet_id int;"], [1], set())
     assert sql == [{"file": "db/V4__x.sql", "lines": [1],
                     "reason": "SQL — runs inside the database, where no probe looks"}]
-
-
-
-
-def test_the_repo_finds_a_source_by_its_package_suffix(tmp_path, monkeypatch):
-    repo = tc.Repo.__new__(tc.Repo)
-    repo.root = tmp_path
-    repo.files = ["be/src/main/java/v/rest/A.java", "be/src/test/java/v/rest/A.java",
-                  "other/src/main/java/v/rest/A.java"]
-    repo._by_name = {"A.java": repo.files}
-    assert repo.by_suffix("v/rest/A.java", "be") == "be/src/main/java/v/rest/A.java"
-    assert repo.by_suffix("/v/rest/B.java") is None
-
-
-def test_a_spec_is_found_by_its_description():
-    src = ["describe('VisitAdd', () => {", "  it('should submit the \\'vet\\'', () => {"]
-    assert tc.spec_line(src, "should submit the 'vet'") == 2
-
-
-def test_a_karma_spec_with_an_escaped_quote_is_placed_at_its_file_and_line():
-    """Eval run 12: Karma reported "… the newer one's loading" and the source says
-    `'… the newer one\\'s loading'`; the plain substring search found no file, the row
-    carried no file and no line, and the matrix dropped the spec. Escapes are decoded
-    before the source is searched."""
-    repo = tc.Repo.__new__(tc.Repo)
-    repo.root = Path("/r")
-    spec = "fe/src/a.component.spec.ts"
-    repo.files = [spec, "fe/src/b.component.spec.ts"]
-    srcs = {spec: ["describe('OwnerListComponent', () => {",
-                   "  it('does not end the newer one\\'s loading', () => {",
-                   '  it("says \\"hi\\"", () => {'],
-            "fe/src/b.component.spec.ts": ["describe('B', () => {"]}
-    repo.text = lambda f: srcs.get(f, [])
-    doc = {"tests": [
-        {"id": "OwnerListComponent does not end the newer one's loading",
-         "description": "does not end the newer one's loading", "status": "passed",
-         "hits": {"/r/fe/src/a.component.ts": [3]}},
-        {"id": 'OwnerListComponent says "hi"', "description": 'says "hi"', "hits": {}}]}
-    got = tc.karma_tests(doc, repo, "Frontend Karma", "fe", lambda p: p[3:])
-    assert [(t["file"], t["line"]) for t in got] == [(spec, 2), (spec, 3)]
-    assert got[0]["title"] == "does not end the newer one's loading"
-    assert got[0]["hits"] == {"fe/src/a.component.ts": [3]}
-    assert tc.spec_line(["  it('a \\\\ b', () => {"], "a \\ b") == 1
 
 
 # --------------------------------------------------------------------------- run-steps
@@ -200,15 +134,15 @@ def _doc():
     its call site at Caller.java:5."""
     common = {"F.java": [1, 10, 11]}
     tests = [
-        {"id": f"s:{i}", "suite": "Backend JUnit", "title": f"t{i}", "file": "FTest.java",
-         "line": 10 + i, "status": "passed", "source": "jacoco", "hits": dict(common)}
+        {"id": f"s:{i}", "suite": "Backend pytest", "title": f"t{i}", "file": "FTest.java",
+         "line": 10 + i, "status": "passed", "source": "pytest", "hits": dict(common)}
         for i in range(4)
     ]
     tests[0]["hits"] = {"F.java": [10, 11, 12], "Caller.java": [5]}
-    tests.append({"id": "s:quiet", "suite": "Backend JUnit", "title": "quiet", "file": "Q.java",
-                  "line": 3, "status": "passed", "source": "jacoco", "hits": {"F.java": [1]}})
-    tests.append({"id": "k:1", "suite": "Frontend Karma", "title": "should create",
-                  "file": "w/a.spec.ts", "line": 7, "status": "failed", "source": "karma",
+    tests.append({"id": "s:quiet", "suite": "Backend pytest", "title": "quiet", "file": "Q.java",
+                  "line": 3, "status": "passed", "source": "pytest", "hits": {"F.java": [1]}})
+    tests.append({"id": "k:1", "suite": "Frontend Vitest", "title": "should create",
+                  "file": "w/a.spec.ts", "line": 7, "status": "failed", "source": "vitest",
                   "hits": {"w/a.ts": [3]}})
     return {"changed": {"F.java": [10, 11, 12, 13, 14], "w/a.ts": [3], "Repo.java": [8]},
             "executable": {"F.java": [1, 10, 11, 12, 13], "w/a.ts": [3]},
@@ -216,9 +150,9 @@ def _doc():
                 {"file": "F.java", "lines": [14], "reason": "declaration — no code of its own"},
                 {"file": "Repo.java", "lines": [8], "reason": "no body of its own — runs where it is called",
                  "proxy": {"Caller.java": [5]}}],
-            "suites": [{"name": "Backend JUnit", "source": "jacoco", "status": "ran", "tests": 5},
-                       {"name": "Frontend Karma", "source": "karma", "status": "ran", "tests": 1},
-                       {"name": "E2E Playwright", "source": "jacoco+v8", "status": "stale",
+            "suites": [{"name": "Backend pytest", "source": "pytest", "status": "ran", "tests": 5},
+                       {"name": "Frontend Vitest", "source": "vitest", "status": "ran", "tests": 1},
+                       {"name": "E2E Playwright", "source": "v8", "status": "stale",
                         "note": "measured on abc, not on HEAD"}],
             "tests": tests}
 
@@ -227,43 +161,10 @@ def test_the_join_counts_measurable_changed_lines_only():
     j = T.coverage_join(_doc())
     assert j["total"] == 5                        # F.java 10-13, a.ts 3
     assert j["gaps"] == {"F.java": [13]}
-    assert j["quiet"] == {"Backend JUnit": 1}
+    assert j["quiet"] == {"Backend pytest": 1}
     by = {r["id"]: r for r in j["rows"]}
     assert by["s:0"]["n"] == 3 and by["s:0"]["via"] == [1]
     assert j["unmeasurable"][1]["reached"] == 1
-
-
-def test_a_template_line_a_component_spec_renders_is_unseen_not_unrun():
-    """Eval run 8: owner-list.component.html:23 (the error alert) sat under "Changed lines
-    no test runs" although spec:212 renders and asserts it. Karma instruments only the
-    TypeScript, so a template line no browser run reached is unseen — proxied by the
-    component lines its specs ran — never "no test runs"."""
-    doc = _doc()
-    doc["changed"]["w/a.html"] = [5, 6]
-    doc["executable"]["w/a.html"] = [5, 6]
-    doc["tests"].append({"id": "e:1", "suite": "E2E Playwright", "title": "renders",
-                         "file": "e/a.spec.ts", "line": 3, "status": "passed",
-                         "source": "jacoco+v8", "hits": {"w/a.html": [5]}})
-    j = T.coverage_join(doc)
-    assert j["gaps"] == {"F.java": [13]}, "line 6 left the gaps, line 5 was run"
-    unseen = [u for u in j["unmeasurable"] if u["file"] == "w/a.html"]
-    assert unseen == [{"file": "w/a.html", "lines": [6], "reason": T.TEMPLATE_UNSEEN,
-                       "proxy": {"w/a.ts": [3]}, "reached": 1}]
-    assert {r["id"]: r for r in j["rows"]}["k:1"]["via"] == [2]
-    # A template whose component no Karma spec ran stays a gap: nothing rendered it.
-    doc["tests"] = [t for t in doc["tests"] if t["source"] != "karma"]
-    assert T.coverage_join(doc)["gaps"]["w/a.html"] == [6]
-
-
-def test_the_karma_hook_charges_function_heads_and_owns_lines_innermost():
-    """Eval run 8: owner-list.component.ts:67 (`error => {`) was "never run" — Istanbul
-    counts it as a function, not a statement, and only statements were snapshotted. And
-    the one statement wrapping both callbacks charged the success body to the failing spec."""
-    client = (HERE / "testcov" / "karma" / "client.js").read_text(encoding="utf-8")
-    plugin = (HERE / "testcov" / "karma" / "plugin.js").read_text(encoding="utf-8")
-    assert "cov[k].f" in client and "fhits: fhits" in client
-    assert "fc.fnMap" in plugin and "s.fhits" in plugin
-    assert "inner.some(" in plugin
 
 
 def test_a_test_that_runs_only_what_most_of_its_suite_runs_passes_through():
@@ -333,7 +234,7 @@ def test_every_test_that_runs_changed_code_joins_the_models_list(tmp_path):
     assert "Q.java:3" not in tests
     assert tests["FTest.java:10"]["status"] == "new"          # test-changes says added
     assert tests["FTest.java:12"]["status"] == "unchanged"
-    assert tests["w/a.spec.ts:7"]["cat"] == "unit"            # a Karma spec
+    assert tests["w/a.spec.ts:7"]["cat"] == "unit"            # a Vitest spec
     part = tests["FTest.java:10"]["parts"][0]                 # its own body, one excerpt
     assert part["from"] == 9 and len(part["html"]) == 4 and "@Test" in part["html"][0]
     assert tests["w/a.spec.ts:7"]["parts"] == []              # no file, no excerpt
@@ -366,7 +267,7 @@ def test_a_suite_whose_coverage_is_stale_or_missing_is_named_on_the_tab(tmp_path
     chip = ('<span class="cov-suite" data-tip="E2E Playwright: measured on abc, not on HEAD">'
             "E2E Playwright coverage: stale</span>")
     assert chip in page
-    assert "Backend JUnit coverage" not in page and "Frontend Karma coverage" not in page
+    assert "Backend pytest coverage" not in page and "Frontend Vitest coverage" not in page
     assert page.index("rm-code") < page.index("cov-after") < page.index("cov-suites")
     doc = _doc()
     doc["suites"] = [s for s in doc["suites"] if s["status"] == "ran"]
@@ -401,9 +302,9 @@ def test_without_a_measurement_the_old_card_says_it_is_not_one(tmp_path):
 
 
 def test_a_second_measurement_of_the_same_checkout_waits_for_the_first(tmp_path):
-    """Two runs on one checkout share `junit-0/`, the Karma output and `target/`: one of
-    them (20 Oct 2026) wrote a coverage file with 386 JUnit tests of 193. The second now
-    waits, and says why, until the first lets go."""
+    """Two runs on one checkout share the coverage data files: one of them (20 Oct 2026)
+    wrote a coverage file listing every test twice. The second now waits, and says why,
+    until the first lets go."""
     import fcntl
     import subprocess
     import time

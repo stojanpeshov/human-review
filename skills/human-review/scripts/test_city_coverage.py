@@ -128,43 +128,46 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
-def test_testcov_reuse_reads_the_last_karma_run_and_writes_every_files_executable_lines(
+def test_testcov_reuse_reads_the_last_pytest_run_and_writes_every_files_executable_lines(
         tmp_path, monkeypatch):
     """`--reuse` runs nothing and touches nothing in `.human-review/coverage`; the output
     carries `executableAll` for every file in `sources`, not just the changed ones."""
     repo = tmp_path / "repo"
-    app = repo / "fe/src/app"
+    app = repo / "svc/app"
     app.mkdir(parents=True)
-    (app / "a.ts").write_text("export const a = 1;\n")
-    (app / "b.ts").write_text("export const b = 2;\n")
-    (app / "a.spec.ts").write_text("it('works', () => {});\n")
-    (repo / "fe/src/polyfills.ts").write_text("// outside sources\n")
+    (app / "a.py").write_text("a = 1\n")
+    (app / "b.py").write_text("b = 2\n")
+    (repo / "svc/tests").mkdir()
+    (repo / "svc/tests/test_a.py").write_text("def test_works(): pass\n")
+    (repo / "svc/other.py").write_text("# outside sources\n")
     (repo / ".gitignore").write_text(".human-review/\n")
     (repo / "human-review.json").write_text(json.dumps({"steps": {"testcov": {
-        "sources": ["fe/src/app/**"], "exclude": ["**/*.spec.ts"],
-        "karma": [{"label": "Frontend Karma", "cwd": "fe", "command": "exit 1"}]}}}))
+        "sources": ["svc/app/**"], "exclude": ["**/tests/**"],
+        "pytest": [{"label": "pytest", "cwd": "svc"}]}}}))
     _git(repo, "init", "-q")
     _git(repo, "add", ".")
     _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
     work = repo / ".human-review/coverage"
     work.mkdir(parents=True)
-    karma = work / "karma-0.json"
-    karma.write_text(json.dumps({
-        "executable": {str(app / "a.ts"): [1], str(app / "b.ts"): [1],
-                       str(repo / "fe/src/polyfills.ts"): [1]},
-        "tests": [{"id": "a works", "description": "works", "status": "passed",
-                   "hits": {str(app / "a.ts"): [1]}}]}))
-    before = karma.read_bytes()
+    run = work / "pytest-0.json"
+    run.write_text(json.dumps({"files": {
+        "app/a.py": {"executed_lines": [1], "contexts": {"1": ["tests.test_a.test_works"]}},
+        "app/b.py": {"executed_lines": [], "missing_lines": [1], "contexts": {}},
+        "other.py": {"executed_lines": [1], "contexts": {"1": ["tests.test_a.test_works"]}}}}))
+    (work / "pytest-0.xml").write_text(
+        '<testsuites><testsuite><testcase classname="tests.test_a" name="test_works" '
+        'file="tests/test_a.py" line="0"/></testsuite></testsuites>')
+    before = run.read_bytes()
     monkeypatch.chdir(repo)
     ran = []
     monkeypatch.setattr(tc, "run_logged", lambda *a, **k: ran.append(a) or 0)
 
     out = tmp_path / "test-coverage.json"
-    assert tc.main(["--base", "HEAD", "--reuse", "--only", "karma", "--out", str(out)]) == 0
+    assert tc.main(["--base", "HEAD", "--reuse", "--only", "pytest", "--out", str(out)]) == 0
 
     assert ran == [], "a reuse runs no suite"
-    assert karma.read_bytes() == before, "...and leaves the last run's dump where it was"
+    assert run.read_bytes() == before, "...and leaves the last run's dump where it was"
     doc = json.loads(out.read_text())
-    assert doc["executableAll"] == {"fe/src/app/a.ts": [1], "fe/src/app/b.ts": [1]}
+    assert doc["executableAll"] == {"svc/app/a.py": [1], "svc/app/b.py": [1]}
     assert doc["changed"] == {}, "nothing changed on HEAD..HEAD, yet the map is whole"
-    assert [t["hits"] for t in doc["tests"]] == [{"fe/src/app/a.ts": [1]}]
+    assert [t["hits"] for t in doc["tests"]] == [{"svc/app/a.py": [1]}]

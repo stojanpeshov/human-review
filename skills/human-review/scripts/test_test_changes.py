@@ -30,7 +30,7 @@ _spec.loader.exec_module(tc)
 # which files are tests at all
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("rel", [
-    "petclinic-backend/src/test/java/victor/VisitTest.java",
+    "activities-backend/tests/unit/test_visit.py",
     "petclinic-test/src/add-visit.spec.ts",
     "petclinic-test/features/add-visit.feature",
     "docs/scripts/db/test_db_schema_to_puml.py",
@@ -41,7 +41,7 @@ def test_a_test_file_is_recognised_by_where_it_sits_or_what_it_is_called(rel):
 
 
 @pytest.mark.parametrize("rel", [
-    "petclinic-backend/src/main/java/victor/VisitRestController.java",
+    "activities-backend/src/activities/handler.py",
     "petclinic-frontend/src/app/visits/vet-name.pipe.ts",
     "README.md",
 ])
@@ -52,40 +52,6 @@ def test_production_code_is_not_swept_in(rel):
 # --------------------------------------------------------------------------- #
 # finding the test cases
 # --------------------------------------------------------------------------- #
-JAVA = """package victor;
-
-class VisitTest {
-  @Autowired VisitRepository repo;
-
-  private void flushAndClear() {
-    em.flush();
-  }
-
-  @Test
-  void create_withVet() {
-    assertThat(1).isEqualTo(1);
-  }
-
-  @ParameterizedTest
-  @ValueSource(ints = {1, 2})
-  void update_changesTheAttendingVet(int id) {
-  }
-}
-"""
-
-
-def test_a_java_method_is_a_test_because_of_its_annotation_not_its_return_type():
-    """`flushAndClear` is `void` too. Counting it would put a helper in a requirement's
-    coverage list, which is the one thing this list must not do."""
-    cases = tc.test_cases("VisitTest.java", JAVA)
-    assert set(cases) == {"create_withVet", "update_changesTheAttendingVet"}
-    assert cases["create_withVet"] == 11
-
-
-def test_an_annotation_between_the_test_and_its_method_does_not_break_the_link():
-    assert "update_changesTheAttendingVet" in tc.test_cases("VisitTest.java", JAVA)
-
-
 def test_playwright_and_jest_cases_come_back_by_their_written_title():
     src = ("test('Add a visit attended by a vet', async ({ page }) => {\n"
            "});\n"
@@ -126,8 +92,8 @@ def test_python_go_and_gherkin_each_have_a_shape():
 # --------------------------------------------------------------------------- #
 def test_hunk_lines_reports_added_lines_and_where_removals_landed():
     diff = (
-        "--- a/x.java\n"
-        "+++ b/x.java\n"
+        "--- a/x.py\n"
+        "+++ b/x.py\n"
         "@@ -10,0 +11,2 @@\n"
         "+  one\n"
         "+  two\n"
@@ -150,109 +116,87 @@ def test_the_file_header_is_not_mistaken_for_an_added_line():
 # --------------------------------------------------------------------------- #
 # the four states
 # --------------------------------------------------------------------------- #
-BEFORE = """class VisitTest {
-  @Test
-  void update_ok() {
-    old();
-  }
+BEFORE = """class TestVisit:
+    def test_update_ok(self):
+        old()
 
-  @Test
-  void delete_ok() {
-  }
+    def test_delete_ok(self):
+        pass
 
-  @Test
-  void obsolete() {
-  }
-}
+    def test_obsolete(self):
+        pass
 """
 
-AFTER = """class VisitTest {
-  @Test
-  void update_ok() {
-    fresh();
-  }
+AFTER = """class TestVisit:
+    def test_update_ok(self):
+        fresh()
 
-  @Test
-  void delete_ok() {
-  }
+    def test_delete_ok(self):
+        pass
 
-  @Test
-  void create_withVet() {
-  }
-}
+    def test_create_with_vet(self):
+        pass
 """
 
 
 def _rows(status="M"):
     added, removed = tc.hunk_lines(
-        "--- a/VisitTest.java\n+++ b/VisitTest.java\n"
-        "@@ -4 +4 @@\n-    old();\n+    fresh();\n"
-        "@@ -12,2 +12,2 @@\n-  void obsolete() {\n-  }\n+  void create_withVet() {\n+  }\n"
+        "--- a/test_visit.py\n+++ b/test_visit.py\n"
+        "@@ -3 +3 @@\n-        old()\n+        fresh()\n"
+        "@@ -8 +8 @@\n-    def test_obsolete(self):\n+    def test_create_with_vet(self):\n"
     )
     return {r["name"]: r for r in
-            tc.classify_file("VisitTest.java", status, BEFORE, AFTER, added, removed)}
+            tc.classify_file("test_visit.py", status, BEFORE, AFTER, added, removed)}
 
 
 def test_a_new_test_inside_a_modified_file_is_added_not_modified():
     """The whole reason this works per test case rather than per file: `--name-status`
     calls the file `M`, and reporting that would bury the row the reviewer came for."""
-    assert _rows()["create_withVet"]["status"] == "added"
-    assert _rows()["create_withVet"]["line"] == 12
+    assert _rows()["test_create_with_vet"]["status"] == "added"
+    assert _rows()["test_create_with_vet"]["line"] == 8
 
 
 def test_a_test_whose_body_the_diff_touched_is_modified():
-    assert _rows()["update_ok"]["status"] == "modified"
+    assert _rows()["test_update_ok"]["status"] == "modified"
 
 
 def test_a_test_the_diff_never_reached_is_unchanged():
-    assert _rows()["delete_ok"]["status"] == "unchanged"
+    assert _rows()["test_delete_ok"]["status"] == "unchanged"
 
 
-LAST_BEFORE = """class ProxyTest {
-  @Test
-  void first() {
-    ok();
-  }
+LAST_BEFORE = """class TestProxy:
+    def test_first(self):
+        ok()
 
-  @ParameterizedTest
-  @ValueSource(ints = {1, 2})
-  void sizes(int n) {
-    ok();
-  }
+    @pytest.mark.parametrize("n", [1, 2])
+    def test_sizes(self, n):
+        ok()
 
-  private void helper() {
-    old();
-  }
+    def helper(self):
+        old()
 
-  @Test
-  void ownerSearchThroughProxy() throws Exception {
-    mockMvc.perform(get("/api/owners"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$", hasSize(greaterThanOrEqualTo(10))));
-  }
-}
+    def test_owner_search_through_proxy(self, client):
+        response = client.get("/api/owners")
+        assert response.status_code == 200
+        assert len(response.json()) >= 10
 """
 
 
 def test_a_body_edit_under_an_unchanged_signature_is_modified_even_in_the_last_test():
     """Eval run 8: OwnerSearchThroughLatencyProxyTest's only test had its assertion
     rewritten and was reported `unchanged` — the last test's body was taken to be its
-    declaration line alone. An annotation edit belongs to the test it annotates, and a
+    declaration line alone. A decorator edit belongs to the test it decorates, and a
     helper edited between two tests belongs to neither."""
-    after = (LAST_BEFORE.replace("ints = {1, 2}", "ints = {1, 2, 3}")
-             .replace("old();", "fresh();")
-             .replace('.andExpect(jsonPath("$", hasSize(greaterThanOrEqualTo(10))));',
-                      '.andExpect(jsonPath("$.content", hasSize(10)))\n'
-                      '        .andExpect(jsonPath("$.totalElements", greaterThanOrEqualTo(10)));'))
-    added, removed = tc.hunk_lines(
-        "--- a/ProxyTest.java\n+++ b/ProxyTest.java\n"
-        "@@ -8 +8 @@\n-  @ValueSource(ints = {1, 2})\n+  @ValueSource(ints = {1, 2, 3})\n"
-        "@@ -14 +14 @@\n-    old();\n+    fresh();\n"
-        "@@ -21 +21,2 @@\n-        .andExpect(x);\n+        .andExpect(a)\n+        .andExpect(b);\n")
+    after = (LAST_BEFORE.replace("[1, 2]", "[1, 2, 3]")
+             .replace("old()", "fresh()")
+             .replace("        assert len(response.json()) >= 10\n",
+                      '        assert len(response.json()["content"]) == 10\n'
+                      '        assert response.json()["totalElements"] >= 10\n'))
+    added, removed = tc.hunk_lines(_unified0(LAST_BEFORE, after))
     rows = {r["name"]: r["status"] for r in
-            tc.classify_file("ProxyTest.java", "M", LAST_BEFORE, after, added, removed)}
-    assert rows == {"first": "unchanged", "sizes": "modified",
-                    "ownerSearchThroughProxy": "modified"}
+            tc.classify_file("test_proxy.py", "M", LAST_BEFORE, after, added, removed)}
+    assert rows == {"test_first": "unchanged", "test_sizes": "modified",
+                    "test_owner_search_through_proxy": "modified"}
 
 
 @pytest.mark.parametrize("rel, text, line, span", [
@@ -268,21 +212,21 @@ def test_a_case_s_own_lines_end_where_its_body_does(rel, text, line, span):
 
 
 def test_a_deleted_test_keeps_a_line_to_open_in_the_surviving_file():
-    row = _rows()["obsolete"]
+    row = _rows()["test_obsolete"]
     assert row["status"] == "deleted"
-    assert row["line"] == 12 and not row.get("gone")
+    assert row["line"] == 8 and not row.get("gone")
 
 
 def test_a_test_in_a_file_that_was_deleted_outright_says_there_is_nothing_to_open():
     rows = {r["name"]: r for r in
-            tc.classify_file("VisitTest.java", "D", BEFORE, None, set(), {})}
-    assert rows["update_ok"] == {"name": "update_ok", "path": "VisitTest.java",
-                                 "status": "deleted", "line": None, "gone": True,
-                                 "baseLine": 3}
+            tc.classify_file("test_visit.py", "D", BEFORE, None, set(), {})}
+    assert rows["test_update_ok"] == {"name": "test_update_ok", "path": "test_visit.py",
+                                      "status": "deleted", "line": None, "gone": True,
+                                      "baseLine": 2}
 
 
 def test_every_case_of_an_added_file_is_added():
-    rows = tc.classify_file("New.java", "A", None, AFTER, {1, 2, 3}, {})
+    rows = tc.classify_file("test_new.py", "A", None, AFTER, {1, 2, 3}, {})
     assert {r["status"] for r in rows} == {"added"}
 
 
@@ -292,65 +236,57 @@ def test_every_case_of_an_added_file_is_added():
 # Eval run 10: AddVisitApiTest kept every line of its own while `anOwnerWithAPet()`, the
 # private helper it calls, was rewritten from one unpaged GET into a page-walking loop —
 # and the test was counted among those "left exactly as they were".
-HELPER_BEFORE = """class AddVisitApiTest {
-  @Test
-  void addsAVisit() {
-    JsonNode owner = anOwnerWithAPet();
-    post(owner);
-  }
+HELPER_BEFORE = """class TestAddVisitApi:
+    def test_adds_a_visit(self):
+        owner = an_owner_with_a_pet()
+        post(owner)
 
-  @Test
-  void listsVets() {
-    get("/api/vets");
-  }
+    def test_lists_vets(self):
+        get("/api/vets")
 
-  @Test
-  void viaAnotherHelper() {
-    wrapper();
-  }
+    def test_via_another_helper(self):
+        wrapper()
 
-  @Test
-  void byReference() {
-    Stream.of(1).map(this::anOwnerWithAPet);
-  }
+    def test_by_reference(self):
+        list(map(an_owner_with_a_pet, [1]))
 
-  private void wrapper() {
-    keep();
-  }
 
-  private JsonNode anOwnerWithAPet() {
-    return first(get("/api/owners"));
-  }
-}
+def wrapper():
+    keep()
+
+
+def an_owner_with_a_pet():
+    return first(get("/api/owners"))
 """
 
 
 def _helper_rows():
     after = HELPER_BEFORE.replace(
-        '    return first(get("/api/owners"));\n',
-        '    for (int page = 0;; page++) {\n'
-        '      JsonNode owners = get("/api/owners?page=" + page).path("content");\n'
-        '      if (!owners.isEmpty()) return first(owners);\n'
-        '    }\n')
+        '    return first(get("/api/owners"))\n',
+        '    for page in itertools.count():\n'
+        '        owners = get(f"/api/owners?page={page}")["content"]\n'
+        '        if owners:\n'
+        '            return first(owners)\n')
     added, removed = tc.hunk_lines(_unified0(HELPER_BEFORE, after))
     return {r["name"]: r for r in
-            tc.classify_file("AddVisitApiTest.java", "M", HELPER_BEFORE, after, added, removed)}
+            tc.classify_file("test_add_visit_api.py", "M", HELPER_BEFORE, after, added, removed)}
 
 
 def test_a_test_whose_same_file_helper_was_rewritten_is_edited_via_that_helper():
     rows = _helper_rows()
-    assert rows["addsAVisit"]["status"] == "modified"
-    assert rows["addsAVisit"]["viaHelper"] == [
-        {"name": "anOwnerWithAPet", "line": 27, "added": 4, "removed": 1}]
-    assert rows["listsVets"]["status"] == "unchanged" and "viaHelper" not in rows["listsVets"]
+    assert rows["test_adds_a_visit"]["status"] == "modified"
+    assert rows["test_adds_a_visit"]["viaHelper"] == [
+        {"name": "an_owner_with_a_pet", "line": 20, "added": 4, "removed": 1}]
+    assert rows["test_lists_vets"]["status"] == "unchanged"
+    assert "viaHelper" not in rows["test_lists_vets"]
 
 
 def test_only_a_direct_call_makes_a_helper_edit_the_test_s():
-    """Conservative: a helper reached through another helper, or named in a method
-    reference, is not a call written in the test — the page would be guessing."""
+    """Conservative: a helper reached through another helper, or passed by name rather
+    than called, is not a call written in the test — the page would be guessing."""
     rows = _helper_rows()
-    assert rows["viaAnotherHelper"]["status"] == "unchanged"
-    assert rows["byReference"]["status"] == "unchanged"
+    assert rows["test_via_another_helper"]["status"] == "unchanged"
+    assert rows["test_by_reference"]["status"] == "unchanged"
 
 
 def test_an_edit_through_a_helper_is_counted_with_the_edited_and_on_its_own():
@@ -381,8 +317,8 @@ def _git(cwd, *args):
 
 def test_it_reads_a_real_branch(tmp_path):
     repo = tmp_path / "repo"
-    (repo / "src" / "test").mkdir(parents=True)
-    f = repo / "src" / "test" / "VisitTest.java"
+    (repo / "tests").mkdir(parents=True)
+    f = repo / "tests" / "test_visit.py"
     _git_init = ["git", "init", "-q", "-b", "main", str(repo)]
     subprocess.run(_git_init, check=True, capture_output=True)
     _git(repo, "config", "user.email", "t@example.com")
@@ -396,8 +332,8 @@ def test_it_reads_a_real_branch(tmp_path):
     _git(repo, "commit", "-qam", "change")
 
     rows = {r["name"]: r["status"] for r in tc.collect(repo, base, [])}
-    assert rows == {"update_ok": "modified", "delete_ok": "unchanged",
-                    "create_withVet": "added", "obsolete": "deleted"}
+    assert rows == {"test_update_ok": "modified", "test_delete_ok": "unchanged",
+                    "test_create_with_vet": "added", "test_obsolete": "deleted"}
 
 
 def test_the_cli_writes_the_manifest_the_page_reads(tmp_path, monkeypatch):
@@ -424,27 +360,8 @@ def test_the_cli_writes_the_manifest_the_page_reads(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Deletion is the loud way to lose a test and the only one a diff makes obvious. These
 # pin the two quiet ways, in every language the script claims to read, because a chip
-# that says "2 lost" while three more sit under an @Disabled is worse than no chip.
+# that says "2 lost" while three more sit under a skip marker is worse than no chip.
 SILENCED = {
-    "VisitTest.java": ("""class VisitTest {
-  @Test
-  void runs() {}
-
-  @Disabled("flaky on CI")
-  @Test
-  void off() {}
-
-  @Nested
-  @Disabled
-  class Inner {
-    @Test
-    void nested_off() {}
-  }
-
-  @Test
-  void still_runs() {}
-}
-""", {"off", "nested_off"}, {"runs", "still_runs"}),
     "visits.spec.ts": ("""describe('visits', () => {
   it('adds one', () => {});
   it.skip('is skipped', () => {});
@@ -498,7 +415,6 @@ def test_a_tag_on_the_feature_reaches_every_scenario_under_it():
 
 
 @pytest.mark.parametrize("rel, text, name, line", [
-    ("VisitTest.java", "class T {\n//  @Test\n//  void parked() {\n//  }\n}\n", "parked", 3),
     ("visits.spec.ts", "describe('x', () => {\n// it('parked', () => {});\n});\n", "parked", 2),
     ("test_visits.py", "# def test_parked():\n#     pass\n", "test_parked", 1),
 ])
@@ -511,64 +427,66 @@ def test_a_test_that_exists_only_inside_a_comment_is_found(rel, text, name, line
 
 
 def test_live_code_is_not_reported_as_commented_out():
-    assert tc.commented_cases("T.java", "class T {\n  @Test\n  void runs() {}\n}\n") == {}
+    assert tc.commented_cases("test_t.py", "def test_runs():\n    pass\n") == {}
 
 
 # --------------------------------------------------------------------------- #
 # what the diff did to the run, not just to the file
 # --------------------------------------------------------------------------- #
-RUNNING = """class VisitTest {
-  @Test
-  void kept() {}
+RUNNING = """def test_kept():
+    pass
 
-  @Test
-  void about_to_be_disabled() {}
 
-  @Test
-  void about_to_be_commented() {}
+def test_about_to_be_disabled():
+    pass
 
-  @Disabled
-  @Test
-  void about_to_come_back() {}
-}
+
+def test_about_to_be_commented():
+    pass
+
+
+@pytest.mark.skip
+def test_about_to_come_back():
+    pass
 """
 
-SILENT = """class VisitTest {
-  @Test
-  void kept() {}
+SILENT = """def test_kept():
+    pass
 
-  @Disabled
-  @Test
-  void about_to_be_disabled() {}
 
-//  @Test
-//  void about_to_be_commented() {}
+@pytest.mark.skip
+def test_about_to_be_disabled():
+    pass
 
-  @Test
-  void about_to_come_back() {}
-}
+
+# def test_about_to_be_commented():
+#     pass
+
+
+def test_about_to_come_back():
+    pass
 """
 
 
 def _silenced_rows():
     return {r["name"]: r for r in
-            tc.classify_file("VisitTest.java", "M", RUNNING, SILENT, set(), {})}
+            tc.classify_file("test_visit.py", "M", RUNNING, SILENT, set(), {})}
 
 
-def test_a_test_left_in_place_under_a_disabled_is_flagged_where_it_stands():
-    row = _silenced_rows()["about_to_be_disabled"]
+def test_a_test_left_in_place_under_a_skip_marker_is_flagged_where_it_stands():
+    row = _silenced_rows()["test_about_to_be_disabled"]
     assert row["silenced"] == "disabled" and not row.get("wasSilenced")
     assert row["status"] != "deleted", "it is still declared; it just does not run"
 
 
 def test_a_commented_out_test_is_a_deletion_that_can_still_be_opened():
-    row = _silenced_rows()["about_to_be_commented"]
+    row = _silenced_rows()["test_about_to_be_commented"]
     assert row["status"] == "deleted" and row["silenced"] == "commented"
     assert row["line"] == 10, "the comment itself — the thing the reviewer has to judge"
 
 
 def test_a_test_switched_back_on_says_where_it_came_from():
-    row = _silenced_rows()["about_to_come_back"]
+    row = _silenced_rows()["test_about_to_come_back"]
     assert row["wasSilenced"] == "disabled" and not row.get("silenced")
 
 
@@ -584,11 +502,11 @@ def test_the_totals_reconcile_with_the_rows_behind_them():
 
 
 def test_deleting_a_test_nobody_was_running_moves_nothing():
-    """A `@Disabled` test that this change set finally removes is housekeeping, not a
+    """A skipped test that this change set finally removes is housekeeping, not a
     loss: the run did not have it before and does not have it now."""
     t = tc.totals(tc.classify_file(
-        "T.java", "M", "class T {\n  @Disabled\n  @Test\n  void dead() {}\n}\n",
-        "class T {\n}\n", set(), {2: 2, 3: 2, 4: 2}))
+        "test_t.py", "M", "import pytest\n\n\n@pytest.mark.skip\ndef test_dead():\n    pass\n",
+        "import pytest\n", set(), {4: 1, 5: 1, 6: 1}))
     assert t["deleted"] == 1 and t["lost"] == 0
     assert t["runningBefore"] == 0 and t["runningAfter"] == 0
 
@@ -677,24 +595,22 @@ def test_a_scenario_retitled_in_place_is_one_deleted_and_one_new(tmp_path):
 
 def test_a_method_renamed_with_its_body_kept_is_deleted_and_added():
     """However much of the body it kept: the name is the key, nothing else."""
-    before = ("class T {\n  @Test\n  void x() {\n    var a = owner();\n    a.save();\n"
-              "    assertThat(a.id()).isPositive();\n  }\n}\n")
-    after = before.replace("void x()", "void save_assignsAnId()")
+    before = "def test_x():\n    a = owner()\n    a.save()\n    assert a.id > 0\n"
+    after = before.replace("def test_x()", "def test_save_assigns_an_id()")
     added, removed = tc.hunk_lines(_unified0(before, after))
-    rows = tc.classify_file("T.java", "M", before, after, added, removed)
-    assert rows == [{"name": "save_assignsAnId", "path": "T.java", "status": "added",
-                     "line": 3},
-                    {"name": "x", "path": "T.java", "status": "deleted", "line": 3,
-                     "baseLine": 3}]
+    rows = tc.classify_file("test_t.py", "M", before, after, added, removed)
+    assert rows == [{"name": "test_save_assigns_an_id", "path": "test_t.py",
+                     "status": "added", "line": 1},
+                    {"name": "test_x", "path": "test_t.py", "status": "deleted", "line": 1,
+                     "baseLine": 1}]
 
 
 def test_the_same_name_with_its_own_lines_changed_is_edited():
-    before = ("class T {\n  @Test\n  void x() {\n    var a = owner();\n"
-              "    assertThat(a.id()).isPositive();\n  }\n}\n")
-    after = before.replace("isPositive()", "isEqualTo(1)")
+    before = "def test_x():\n    a = owner()\n    assert a.id > 0\n"
+    after = before.replace("> 0", "== 1")
     added, removed = tc.hunk_lines(_unified0(before, after))
-    assert tc.classify_file("T.java", "M", before, after, added, removed) == [
-        {"name": "x", "path": "T.java", "status": "modified", "line": 3}]
+    assert tc.classify_file("test_t.py", "M", before, after, added, removed) == [
+        {"name": "test_x", "path": "test_t.py", "status": "modified", "line": 1}]
 
 
 def _unified0(before: str, after: str) -> str:

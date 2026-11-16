@@ -1,44 +1,24 @@
-"""Generated-sequence sidecars: Spring handlers, call details, the test behind a diagram."""
+"""Generated-sequence sidecars: call details, the test behind a diagram."""
 from __future__ import annotations
 
 import functools
 import json
 import os
 import re
-import urllib.parse
 from pathlib import Path
 
 from .util import _git
 
 # `Browser → Backend: POST /api/owners/{ownerId}/pets/{petId}/visits` — a call arrow's
-# title, as the generator writes it. The route is the contract; the method that answers it
-# is where a reviewer actually has to go, and nothing in a trace knows its name.
+# title, as the generator writes it. The route is already on the arrow the reader clicked,
+# so the panel's head keeps only who called whom.
 GENSEQ_CALL_TITLE = re.compile(
     r"(?:\u2192|->)\s*\w+\s*:\s*"
     r"(?P<verb>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(?P<route>/\S*)\s*$"
 )
-
-MAPPING_ANNOTATION = re.compile(r"@(?P<kind>Get|Post|Put|Patch|Delete|Request)Mapping\b")
-# `@GetMapping(produces = "application/json")` names a media type, not a route, so the
-# first string literal in the arguments is only the path when it is positional or spelled
-# `value =`/`path =`. Anything else leaves the mapping at its class-level base.
-MAPPING_NAMED_PATH = re.compile(r'(?:value|path)\s*=\s*\{?\s*"(?P<path>[^"]*)"')
-MAPPING_POSITIONAL_PATH = re.compile(r'^\s*\{?\s*"(?P<path>[^"]*)"')
-MAPPING_NAMED_CONSTANT = re.compile(r'(?:value|path)\s*=\s*\{?\s*(?P<ref>[A-Za-z_][\w.]*)\s*[,})]?')
-MAPPING_POSITIONAL_CONSTANT = re.compile(r'^\s*\{?\s*(?P<ref>[A-Za-z_][\w.]*)\s*(?:[,}]|$)')
-STRING_CONSTANT = re.compile(
-    r'\bstatic\s+final\s+String\s+(?P<name>\w+)\s*=\s*"(?P<value>[^"]*)"\s*;'
-)
-REQUEST_METHOD = re.compile(r"RequestMethod\.(?P<verb>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)")
-TYPE_DECL = re.compile(
-    r"^(?:(?:public|private|protected|static|final|abstract|sealed|non-sealed)\s+)*"
-    r"(?:class|interface|record|enum)\s+(?P<name>\w+)"
-)
-METHOD_NAME = re.compile(r"(?P<name>\w+)\s*\(")
-HTTP_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 # `.human-review` too: the Sequence step files its own copies of the diagrams in there
 # (`GENSEQ_OVERLAY`), and a walk that found them would pair each picture twice.
-SKIP_DIRS = {".git", "node_modules", "target", "build", "out", "dist", ".idea", ".gradle",
+SKIP_DIRS = {".git", "node_modules", "target", "build", "out", "dist", ".idea",
              ".human-review"}
 
 #: Where `run-steps.py` `_sequence` files what its traced run drew, under each diagram's
@@ -64,7 +44,7 @@ def _overlay_state(root: Path) -> tuple[Path, frozenset[str]] | None:
     It used to be all or nothing: the copy counted only while HEAD was the very commit it was
     traced at. Any commit after the trace then threw away every picture in it — and the
     pictures of the tests the branch wrote, which the step traces untagged and never leaves in
-    the work tree, exist nowhere else. The visit-vet review lost both of its auto-picked JUnit
+    the work tree, exist nowhere else. The visit-vet review lost both of its auto-picked
     diagrams that way (6 Oct 2026) to a `review-points.md` commit and a merge of `main`,
     neither of which touched a diagram. A later commit is the newer truth only for the files
     it actually changed, so that is what is ruled out: per file, not per run."""
@@ -102,193 +82,13 @@ def genseq_file(rel: str, root: Path) -> Path:
     return genseq_overlay_copy(rel, root) or Path(root) / rel
 
 
-def _annotation_span(lines, i: int):
-    """The parenthesised argument text of the annotation on line `i`, and where it ends.
-
-    Read as one balanced span rather than per line: a mapping wraps as soon as it carries
-    `produces`, and an `@ApiResponse` above it wraps over four — whose continuation lines
-    look exactly like a method declaration to a line scan, which is how `@Content(` once
-    became the name of the method under it."""
-    text, depth, started = "", 0, False
-    for j in range(i, len(lines)):
-        for ch in lines[j]:
-            if ch == "(":
-                depth += 1
-                started = True
-                if depth == 1:
-                    continue
-            elif ch == ")":
-                depth -= 1
-                if depth == 0:
-                    return text, j
-            if started:
-                text += ch
-        if not started and lines[j].strip():
-            return "", j
-    return text, len(lines) - 1
-
-
-def _mapping_path(args: str, constants: dict | None = None) -> str:
-    m = MAPPING_NAMED_PATH.search(args) or MAPPING_POSITIONAL_PATH.match(args)
-    if m:
-        return m["path"]
-    # `@PostMapping(VisitBookedNotification.PATH)`: a route shared by the service that
-    # serves it and the client that calls it lives in one constant, so neither can drift.
-    # Without this the visit-booked arrow had no handler, only the route repeated.
-    ref = MAPPING_NAMED_CONSTANT.search(args) or MAPPING_POSITIONAL_CONSTANT.match(args)
-    if ref and constants:
-        return constants.get(ref["ref"]) or constants.get(ref["ref"].rsplit(".", 1)[-1]) or ""
-    return ""
-
-
-def _string_constants(source: str, rel: str, found: dict) -> None:
-    """`Class.NAME` (and bare `NAME`) → the literal of every `static final String NAME = "…"`."""
-    cls = Path(rel).stem
-    for m in STRING_CONSTANT.finditer(source):
-        found[f"{cls}.{m['name']}"] = m["value"]
-        found.setdefault(m["name"], m["value"])
-
-
-def _join_route(base: str, sub: str) -> str:
-    parts = [p for p in (base.strip("/"), sub.strip("/")) if p]
-    return "/" + "/".join(parts)
-
-
-def _controller_routes(source: str, rel: str, found: dict,
-                       constants: dict | None = None) -> None:
-    """Every `VERB /route` this file handles, mapped to `Class.method` and its line.
-
-    A line scan, not a parser: the three things it needs — the class-level base path, a
-    method's mapping annotation, and the declaration under it — are each one line of Java,
-    and a mapping annotation is never anywhere else in a file. Annotations pile up until a
-    declaration consumes them, so the comments and the other annotations Spring code puts
-    between `@PostMapping` and its method cost nothing."""
-    lines = source.splitlines()
-    base, cls, pending, i = "", Path(rel).stem, None, 0
-    while i < len(lines):
-        stripped, at = lines[i].strip(), i
-        i += 1
-        if not stripped or stripped.startswith(("//", "/*", "*")):
-            continue
-        if stripped.startswith("@"):
-            args, end = _annotation_span(lines, at)
-            i = end + 1
-            mapping = MAPPING_ANNOTATION.match(stripped)
-            if mapping:
-                verbs = ([mapping["kind"].upper()] if mapping["kind"] != "Request"
-                         else [m["verb"] for m in REQUEST_METHOD.finditer(args)] or list(HTTP_VERBS))
-                pending = (verbs, _mapping_path(args, constants))
-            continue
-        declared = TYPE_DECL.match(stripped)
-        if declared:
-            cls = declared["name"]
-            base, pending = (pending[1] if pending else ""), None
-            continue
-        name = METHOD_NAME.search(stripped) if pending else None
-        if name:
-            verbs, sub = pending
-            for verb in verbs:
-                found[f"{verb} {_join_route(base, sub)}"] = (rel, at + 1, f"{cls}.{name['name']}")
-        pending = None
-
-
-@functools.lru_cache(maxsize=None)
-def spring_handlers(root: Path) -> dict:
-    """`VERB /route` → (repo-relative file, line, `Class.method`) for this checkout.
-
-    Only files that declare themselves controllers are opened, so a repo with no Spring in
-    it pays one directory walk and nothing else. Resolved here rather than in the diagram
-    generator because that generator sees a trace, which carries the route and no code."""
-    found: dict = {}
-    constants: dict = {}
-    controllers = []
-    for folder, dirs, names in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        for name in names:
-            if not name.endswith(".java"):
-                continue
-            path = Path(folder) / name
-            try:
-                source = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            rel = str(path.relative_to(root))
-            if "static final String" in source:
-                _string_constants(source, rel, constants)
-            if "@RestController" in source or "@Controller" in source:
-                controllers.append((source, rel))
-    # Second, so a mapping can name a constant declared in a file the walk reaches later —
-    # a shared library's, typically, read after the service that uses it.
-    for source, rel in controllers:
-        _controller_routes(source, rel, found, constants)
-    return found
-
-
-def _template_match(template: str, path: str) -> int | None:
-    """How many literal segments `template` (`/api/owners/{ownerId}`) shares with the
-    concrete `path` (`/api/owners/1`), or None when it does not match it at all."""
-    want, got = template.strip("/").split("/"), path.strip("/").split("/")
-    if len(want) != len(got):
-        return None
-    literal = 0
-    for w, g in zip(want, got):
-        if w.startswith("{") and w.endswith("}") and g:
-            continue
-        if w != g:
-            return None
-        literal += 1
-    return literal
-
-
-def handler_for(handlers: dict, verb: str, route: str):
-    """The handler of `VERB route`: the route as the arrow spells it, or — for a request the
-    sidecar records concretely, `GET /api/owners/1?x=y` — the mapping whose template it
-    fills, the most literal one first, as Spring itself prefers `/owners/new` to `/{id}`."""
-    hit = handlers.get(f"{verb} {route}")
-    if hit:
-        return hit
-    path = route.split("?", 1)[0].split("#", 1)[0]
-    best = None
-    for key, value in handlers.items():
-        v, _, template = key.partition(" ")
-        score = _template_match(template, path) if v == verb else None
-        if score is not None and (best is None or score > best[0]):
-            best = (score, value)
-    return best[1] if best else None
-
-
-def _with_handlers(index: dict, root: Path) -> dict:
-    """Hang the entry point on every call arrow whose route this checkout still serves.
-
-    A route the branch deleted simply gets no row — the base-ref sidecar is resolved
-    against the work tree too, and a link into a method that is no longer there would be
-    worse than the route alone.
-
-    Every HTTP request arrow has an entry since sidecar version 3, the browser's own among
-    them, and one whose title names no route is still a request when it carries a
-    structured `request`: its method and URL say what the title would have."""
-    handlers = None
+def _titles_without_route(index: dict) -> dict:
+    """Cut the route off every call arrow's title: the arrow the reader just clicked shows
+    it, and the panel's head says who called whom."""
     for entry in (index.get("details") or {}).values():
         called = GENSEQ_CALL_TITLE.search(entry.get("title", ""))
-        request = entry.get("request") if isinstance(entry.get("request"), dict) else {}
-        if called:
-            verb, route = called["verb"], called["route"]
-        elif str(request.get("method", "")).upper() in HTTP_VERBS and request.get("url"):
-            verb = str(request["method"]).upper()
-            route = urllib.parse.urlsplit(str(request["url"])).path or "/"
-        else:
-            continue
-        if handlers is None:
-            handlers = spring_handlers(root)
-        hit = handler_for(handlers, verb, route)
-        # The route is on the arrow the reader just clicked: the head says who called whom,
-        # and the handler takes the place the route was repeated in.
         if called:
             entry["title"] = entry["title"][: called.start("verb")].rstrip().rstrip(":").rstrip()
-        if hit:
-            rel, line, name = hit
-            entry["handler"] = {"name": name,
-                                "href": f"vscode://file/{(root / rel).resolve()}:{line}:1"}
     return index
 
 
@@ -310,14 +110,14 @@ def genseq_details(rel: str, root: Path, *, work_tree: bool = False) -> str:
     sidecar = Path(root) / json_rel if work_tree else genseq_file(json_rel, root)
     if not sidecar.is_file():
         return ""
-    return _details_carrier(sidecar, root)
+    return _details_carrier(sidecar)
 
 
-def _details_carrier(sidecar: Path, root: Path) -> str:
+def _details_carrier(sidecar: Path) -> str:
     # `<` is the only character that can end a <script> block early, and a JSON string
     # may legally spell it \\u003c — so the payload stays valid JSON and inert to the
     # HTML parser without any un-escaping step on the other side.
-    index = _with_handlers(json.loads(sidecar.read_text(encoding="utf-8")), root)
+    index = _titles_without_route(json.loads(sidecar.read_text(encoding="utf-8")))
     payload = json.dumps(index, ensure_ascii=False).replace("<", "\\u003c")
     return f'<script type="application/json" class="genseq-details">{payload}</script>'
 
@@ -345,7 +145,7 @@ def genseq_details_at_render(row, assets: Path, root: Path) -> str:
     """
     name = (row.get("new_details") or "").strip()
     if name and (assets / name).is_file():
-        return _details_carrier(assets / name, root)
+        return _details_carrier(assets / name)
     return genseq_details(row["source"], root)
 
 
@@ -364,7 +164,7 @@ def genseq_details_at_base(row, assets: Path, root: Path) -> str:
     content-derived, so an id in both sides means the same payload on both.
     """
     name = (row.get("old_details") or "").strip()
-    return _details_carrier(assets / name, root) if name and (assets / name).is_file() else ""
+    return _details_carrier(assets / name) if name and (assets / name).is_file() else ""
 
 
 #: `[[src://<test>:<line>{tip} <scenario title>]]` — the handle the sequence generators

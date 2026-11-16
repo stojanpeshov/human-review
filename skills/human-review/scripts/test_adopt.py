@@ -72,7 +72,7 @@ def test_a_diagram_cards_i_sits_beside_its_pill_not_in_its_header():
 
 
 def test_each_data_card_gets_its_own_button_inside_its_border_with_its_own_prompt():
-    body = (_card("Domain Model", "DomainModel.puml")
+    body = (_card("Fixtures", "Fixtures.puml")
             + _card("DB", "DB.puml", '<p class="sub dgm-stale">Also changed</p>')
             + _card("Conceptual Model", "ConceptualModel.drawio.png"))
     out = place_prompts("data", body)
@@ -88,8 +88,8 @@ def test_each_data_card_gets_its_own_button_inside_its_border_with_its_own_promp
     assert "adoptfoot" not in cards[0] + cards[2]
     first = [p.split(" into this repository")[0] for p in _prompts(out)]
     assert first == [
-        "Get the domain-model class diagram generated from your domain classes by Java "
-        "reflection, committed as PlantUML and diffed base against branch",
+        "Get the Fixtures diagram, kept in the repository as PlantUML and diffed base "
+        "against branch",
         "Get the ER diagram written from the SQLAlchemy models at the merge-base and on the "
         "branch, diffed base against branch",
         "Get the hand-drawn draw.io Conceptual Model diagram, checked against the code by a "
@@ -107,14 +107,6 @@ def test_a_drawio_card_whose_head_holds_its_action_buttons_is_still_a_drawio_pie
             '<div class="svgbox"><svg></svg></div></div>')
     out = place_prompts("packages", body)
     assert 'data-piece="diagram.drawio' in out, out
-
-
-def test_a_renamed_modules_card_is_still_the_modules_piece():
-    """Victor renamed "Maven modules" to "Backend Build Units" (6 Nov 2026): only the source
-    file still says modules, and the card fell back to the generic prompt and no (i)."""
-    out = place_prompts("packages", _card("Backend Build Units", "MavenModules.puml"))
-    assert 'data-piece="diagram.modules' in out, out
-    assert 'data-explain="diagram.modules"' in out, out
 
 
 def test_a_diagram_inside_a_test_pair_is_part_of_the_pair_not_a_piece_of_its_own():
@@ -273,9 +265,9 @@ def test_each_explainer_is_a_few_one_sentence_bullets_and_names_a_real_piece(key
 
 
 def test_the_i_sits_right_after_the_pill_inside_its_row():
-    row = adopt_html("diagram.domain", "Domain Model")
+    row = adopt_html("diagram.db", "DB")
     assert re.search(r'Prompt to get this</button><button type="button" class="hrx-i" '
-                     r'aria-pressed="false" data-explain="diagram\.domain"', row)
+                     r'aria-pressed="false" data-explain="diagram\.db"', row)
     assert row.endswith("</button></div>")
 
 
@@ -328,13 +320,13 @@ def test_the_pill_burst_is_a_square_so_no_angle_leaves_a_corner_bare():
 def test_a_card_with_green_fill_bars_explains_them_left_of_its_pill():
     # Victor, 18 Oct 2026: "it's not clear what the progress bar means".
     bar = '<svg><rect class="pkg-impact" x="1" y="1" width="5" height="9"/></svg>'
-    out = place_prompts("packages", _card("Java packages", "packages.puml", bar))
+    out = place_prompts("packages", _card("Packages", "Packages.puml", bar))
     foot = out[out.index('<div class="adoptline'):]
     assert foot.index('class="impact-legend"') < foot.index("Prompt to get this")
     assert "share of the lines this PR added" in foot
     # Victor, 6 Nov 2026: the swatch needs no name; the "=" follows it directly.
     assert '</svg><span>= the box\'s share' in foot and "blue fill" not in foot.lower()
-    plain = place_prompts("packages", _card("Java packages", "packages.puml"))
+    plain = place_prompts("packages", _card("Packages", "Packages.puml"))
     assert "impact-legend" not in plain
 
 
@@ -343,11 +335,11 @@ def test_show_only_impacted_moves_from_the_head_to_the_bottom_row_left_of_the_pi
     # fill's legend at the left end of that row; the head keeps the title and the badges.
     from hrbuild.shared.folders import ONLY_IMPACTED
     bar = '<svg><rect class="pkg-impact" x="1" y="1" width="5" height="9"/></svg>'
-    card = _card("Java packages", "packages.puml", bar).replace(
-        "<span>packages.puml</span>", ONLY_IMPACTED + "<span>packages.puml</span>")
+    card = _card("Packages", "Packages.puml", bar).replace(
+        "<span>Packages.puml</span>", ONLY_IMPACTED + "<span>Packages.puml</span>")
     out = place_prompts("packages", card)
     head = out[out.index('<div class="head">'):out.index('<div class="svgbox">')]
-    assert "dgm-only" not in head and "packages.puml" in head
+    assert "dgm-only" not in head and "Packages.puml" in head
     foot = out[out.index('<div class="adoptline'):]
     assert out.count('class="dgm-only"') == 1
     assert (foot.index('class="impact-legend"') < foot.index('class="dgm-only"')

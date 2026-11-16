@@ -3,7 +3,7 @@
 Serial, they took 8.3 min on petclinic; most of that was four steps that never wait for one
 another. These tests pin the two rules that make running them at once safe: a step starts
 only after the steps it NEEDS, and never alongside a step that USES the same resource
-(the commit's Docker stack, the Maven build directory).
+(the commit's Docker stack, the pytest suite and its test database).
 """
 from __future__ import annotations
 

@@ -161,8 +161,8 @@ def diff_html(rel: str, base: str, root: Path, caption: str | None = None,
             f'<tr class="{kind}">'
             f'<td class="gln">{old_no or ""}</td><td class="gln">{new_no or ""}</td>'
             f'<td class="code">{html.escape(marker + code)}</td></tr>')
-    # The name, and the path on hover. A repo-relative Java path spends five segments on
-    # ceremony -- module, `src/main/java`, the org package -- before it reaches the one
+    # The name, and the path on hover. A repo-relative path spends its first segments on
+    # ceremony -- the service, `src/`, the package -- before it reaches the one
     # word that says which file this is, and the header is where a reader looks to answer
     # exactly that. The full path is not lost, it is moved to where the face could not fit
     # it, which is what this page's tooltips are for. A file at the repo root has no path

@@ -178,7 +178,7 @@
             border-bottom:1px solid var(--line); box-shadow:0 6px 12px -8px rgba(0,0,0,.45); }
 #seqheads[hidden] { display:none; }
 #seqheads svg { position:absolute; top:0; display:block; }
-/* A package's or a Maven module's box that opens its folder (folders.js): the box answers
+/* A package's box that opens its folder (folders.js): the box answers
    the hover, and the outline follows the keyboard. `!important` against the stroke
    PlantUML writes into each rect's own style attribute. */
 .diagram [data-folder][role=button] { cursor:pointer; }
@@ -222,7 +222,7 @@
   .diagram .svgbox svg g.link.dgm-m-glow > :is(path, polygon) { animation-delay:0ms; }
 }
 /* A card's credential after its status badge (`diagrams.prov_badge`): a ✓ on a green dot,
-   then "ArchUnit-tested vs code" or "Generated from …". It stays beside the badge; the
+   then "Tested vs code" or "Generated from …". It stays beside the badge; the
    file name after it takes the push to the right edge. */
 .diagram .head > .badge + .dgm-prov { margin-left:0 !important; }
 .diagram .head > .dgm-prov + * { margin-left:auto !important; }

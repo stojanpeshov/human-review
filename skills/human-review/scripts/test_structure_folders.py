@@ -1,10 +1,10 @@
 """The Structure tab's boxes as ways into their folders.
 
-Build side: a package box (`[..web] <<..web>>`) resolves to its package's directory under
-the root package every box agrees on, a module box to the directory of the `pom.xml` whose
-own artifactId it names, and each one carries that folder and a github.com link to it.
-Server side: `/__reveal_folder__` takes a path relative to the checkout, refuses anything
-that is not a folder inside it, and asks the owning window's bridge to reveal it.
+Build side: a package box (`component "src.core" as p_src_core <<src/core>>`, as
+`structure-diagrams.py` writes it) resolves to the folder its stereotype names, and carries
+that folder and a forge link to it. Server side: `/__reveal_folder__` takes a path relative
+to the checkout, refuses anything that is not a folder inside it, and asks the owning
+window's bridge to reveal it.
 """
 from __future__ import annotations
 
@@ -33,81 +33,59 @@ def _write(root: Path, rel: str, text: str = "") -> None:
     (root / rel).write_text(text)
 
 
-POM = """<?xml version="1.0"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <parent><groupId>g</groupId><artifactId>the-parent</artifactId><version>1</version></parent>
-  <artifactId>{aid}</artifactId>
-</project>
-"""
-
 PACKAGES = """@startuml
-hide stereotype
-[..web] <<..web>>
-[..web.dto] <<..web.dto>>
-component "Domain" as dom <<..domain>>
-[..gone] <<..gone>>
-[..any] <<..(a|b)..>>
-[..web] --> [..domain]
-@enduml
-"""
-
-MODULES = """@startuml
-component "shop-api" as shop_api
-component "shop-core" as shop_core
-component "not-a-module" as nam
-shop_api --> shop_core
+component "src" as p_src <<src>>
+component "src.core" as p_src_core <<src/core>>
+component "src.handlers" as p_src_handlers <<src/handlers>>
+component "libs.core" as p_libs_core <<libs/core>>
+component "src.gone" as p_src_gone <<src/gone>>
+component "Queue" as q <<queue>>
+component "Out" as out <<../outside>>
+p_src_handlers ..> p_src_core
 @enduml
 """
 
 
 @pytest.fixture
 def repo(tmp_path):
-    """Two modules under no aggregator; a package tree rooted at `com.acme.shop`, plus a
-    decoy `web` package under another root that a suffix match alone would also take."""
+    """A Python service: `src` with two packages, a `libs/core` beside it, a stack folder,
+    and the Packages diagram `structure-diagrams.py` would write for it."""
     r = tmp_path / "repo"
     r.mkdir()
     _git(r, "init", "-q", "-b", "main")
     _git(r, "config", "user.email", "t@t")
     _git(r, "config", "user.name", "t")
-    _write(r, "shop-api/pom.xml", POM.format(aid="shop-api"))
-    _write(r, "libs/core/pom.xml", POM.format(aid="shop-core"))
-    src = "shop-api/src/main/java/com/acme/shop"
-    for f in ("web/A.java", "web/dto/B.java", "domain/C.java", "App.java"):
-        _write(r, f"{src}/{f}", "class X {}")
-    _write(r, "shop-api/src/main/java/com/acme/legacy/web/Old.java", "class X {}")
-    _write(r, "shop-api/docs/packages.puml", PACKAGES)
-    _write(r, "shop-api/docs/modules.puml", MODULES)
+    for f in ("src/app.py", "src/core/__init__.py", "src/core/services/svc.py",
+              "src/handlers/h.py", "libs/core/x.py"):
+        _write(r, f, "x = 1")
+    _write(r, "shop-api/serverless.yml", "service: shop-api\n")
+    _write(r, "docs/Packages.puml", PACKAGES)
     _git(r, "add", ".")
     _git(r, "commit", "-qm", "one")
-    folders._packages.cache_clear()
-    folders.maven_modules.cache_clear()
     folders._tree_base.cache_clear()
     folders.forge_for.cache_clear()
     folders._branch_files.cache_clear()
     yield r
-    folders._packages.cache_clear()
-    folders.maven_modules.cache_clear()
     folders._tree_base.cache_clear()
     folders.forge_for.cache_clear()
 
 
-def test_a_package_box_maps_to_its_folder_under_the_root_every_box_agrees_on(repo):
-    got = folders.package_folders("shop-api/docs/packages.puml", repo)
-    base = "shop-api/src/main/java/com/acme/shop"
-    # `..web` also matches com.acme.legacy.web; the root the other boxes share decides.
-    assert got == {"..web": f"{base}/web", "..web.dto": f"{base}/web/dto",
-                   "dom": f"{base}/domain"}
+def test_a_package_box_maps_to_the_folder_its_stereotype_names(repo):
+    got = folders.package_folders("docs/Packages.puml", repo)
+    assert got == {"p_src": "src", "p_src_core": "src/core", "p_src_handlers": "src/handlers",
+                   "p_libs_core": "libs/core"}
 
 
-def test_a_box_whose_pattern_names_no_one_folder_gets_none(repo):
-    got = folders.package_folders("shop-api/docs/packages.puml", repo)
-    assert "..gone" not in got and "..any" not in got
+def test_a_box_whose_stereotype_names_no_folder_gets_none(repo):
+    (repo.parent / "outside").mkdir(exist_ok=True)
+    got = folders.package_folders("docs/Packages.puml", repo)
+    assert "p_src_gone" not in got and "q" not in got and "out" not in got
 
 
-def test_a_module_box_maps_to_the_pom_whose_own_artifact_id_it_names(repo):
-    assert folders.maven_modules(repo) == {"shop-api": "shop-api", "shop-core": "libs/core"}
-    got = folders.folder_targets("shop-api/docs/modules.puml", repo)
-    assert got == {"shop_api": ("shop-api", "shop-api"), "shop_core": ("shop-core", "libs/core")}
+def test_the_targets_pair_each_box_with_its_label(repo):
+    got = folders.folder_targets("docs/Packages.puml", repo)
+    assert got["p_libs_core"] == ("libs.core", "libs/core")
+    assert got["p_src_core"] == ("src.core", "src/core")
 
 
 def _entity(name: str, label: str) -> str:
@@ -118,25 +96,23 @@ def _entity(name: str, label: str) -> str:
 def test_a_box_links_to_its_folder_on_github_at_the_reviewed_commit(repo):
     _git(repo, "remote", "add", "origin", "git@github.com:acme/shop.git")
     head = _git(repo, "rev-parse", "HEAD")
-    svg = _entity("..web.dto", "..web.dto") + _entity("nobody", "nobody")
-    out = folders.link_folders(svg, "shop-api/docs/packages.puml", repo)
-    assert ('data-folder="shop-api/src/main/java/com/acme/shop/web/dto" '
-            'data-folder-name="..web.dto" data-quiet="">') in out
-    assert (f'<a href="https://github.com/acme/shop/tree/{head}/shop-api/src/main/java/com/'
-            f'acme/shop/web/dto" data-tip="Open ..web.dto on GitHub">') in out
+    svg = _entity("p_src_core", "src.core") + _entity("nobody", "nobody")
+    out = folders.link_folders(svg, "docs/Packages.puml", repo)
+    assert 'data-folder="src/core" data-folder-name="src.core" data-quiet="">' in out
+    assert (f'<a href="https://github.com/acme/shop/tree/{head}/src/core" '
+            'data-tip="Open src.core on GitHub">') in out
     assert _entity("nobody", "nobody") in out
     assert " title=" not in out
 
 
 def test_without_a_github_remote_the_box_has_its_folder_and_no_link(repo):
-    out = folders.link_folders(_entity("shop_core", "shop-core"), "shop-api/docs/modules.puml",
-                               repo)
+    out = folders.link_folders(_entity("p_libs_core", "libs.core"), "docs/Packages.puml", repo)
     assert 'data-folder="libs/core"' in out and "<a " not in out
 
 
 def test_a_box_somebody_already_linked_is_left_alone(repo):
-    svg = ('<g class="entity" data-qualified-name="shop_api"><a href="x"><rect/></a></g>')
-    assert folders.link_folders(svg, "shop-api/docs/modules.puml", repo) == svg
+    svg = ('<g class="entity" data-qualified-name="p_src"><a href="x"><rect/></a></g>')
+    assert folders.link_folders(svg, "docs/Packages.puml", repo) == svg
 
 
 # --------------------------------------------------------------------------- #
@@ -144,7 +120,7 @@ def test_a_box_somebody_already_linked_is_left_alone(repo):
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("rel", ["../outside", "/etc", "shop-api/../../x", "~/x", "a\\b",
-                                 "", "  ", None, 3, "missing", "shop-api/pom.xml"])
+                                 "", "  ", None, 3, "missing", "shop-api/serverless.yml"])
 def test_anything_but_a_folder_inside_the_checkout_is_refused(repo, rel):
     (repo.parent / "outside").mkdir(exist_ok=True)
     assert srv.checkout_folder(repo, rel) is None
@@ -287,16 +263,15 @@ def test_a_gallery_card_links_its_boxes_and_a_sequence_card_does_not(repo, tmp_p
     from hrbuild.shared import diagrams
     out = tmp_path / "out"
     (out / "assets" / "diagrams").mkdir(parents=True)
-    row = diagrams.unchanged_row("modules", "shop-api/docs/modules.puml")
+    row = diagrams.unchanged_row("packages", "docs/Packages.puml")
     html_ = diagrams.render_diagrams({"manifest": "assets/diagrams/MANIFEST.tsv"}, repo, out,
                                      [row])
     assert 'data-folder="libs/core"' in html_
     seq = dict(row, kind="sequence")
     assert "data-folder=" not in diagrams.render_diagrams(
         {"manifest": "assets/diagrams/MANIFEST.tsv"}, repo, out, [seq])
-    card = diagrams.render_puml({"src": "shop-api/docs/packages.puml", "name": "Java packages"},
-                                repo, out)
-    assert 'data-folder-name="..web.dto"' in card
+    card = diagrams.render_puml({"src": "docs/Packages.puml", "name": "Packages"}, repo, out)
+    assert 'data-folder-name="src.core"' in card
 
 
 def _box(name: str, label: str) -> str:
@@ -308,30 +283,30 @@ def _box(name: str, label: str) -> str:
 def test_a_box_is_shaded_by_its_share_of_the_lines_added_and_lists_its_files(repo, monkeypatch):
     """Victor, 14 Oct 2026: the packages the branch grew show it, as a bar behind the box as
     wide as its share of the lines added, and hovering one lists its files, each a diff link.
-    A file is counted once, in the deepest box that holds it: web/dto is not also web."""
+    A file is counted once, in the deepest box that holds it: src/core is not also src."""
     from hrbuild.shared import snippets
     import html as _html
     base = _git(repo, "rev-parse", "HEAD")
-    src = "shop-api/src/main/java/com/acme/shop"
-    _write(repo, f"{src}/web/A.java", "class X {}\n" + "int a;\n" * 2)   # +3 −1: the line had no newline
-    _write(repo, f"{src}/web/dto/D.java", "\n".join(["x"] * 6) + "\n")  # +6, added
+    _write(repo, "src/handlers/h.py", "x = 1\n" + "y = 2\n" * 2)   # +3 −1: the line had no newline
+    _write(repo, "src/core/d.py", "\n".join(["x"] * 6) + "\n")      # +6, added
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "two")
     monkeypatch.setattr(snippets, "SNIPPET_BASE", base)
-    svg = _box("..web", "..web") + _box("..web.dto", "..web.dto") + _box("dom", "Domain")
-    out = folders.link_folders(svg, "shop-api/docs/packages.puml", repo)
-    web, dto, dom = out.split("</g>")[:3]
-    assert 'data-impact="0.333"' in web and 'data-impact="0.667"' in dto
-    assert "data-impact" not in dom and "pkg-impact" not in dom, "a box the branch left alone"
-    assert 'class="pkg-impact" x="10" y="20" width="66.7" height="36"' in dto
+    svg = (_box("p_src_handlers", "src.handlers") + _box("p_src_core", "src.core")
+           + _box("p_src", "src"))
+    out = folders.link_folders(svg, "docs/Packages.puml", repo)
+    handlers, core, top = out.split("</g>")[:3]
+    assert 'data-impact="0.333"' in handlers and 'data-impact="0.667"' in core
+    assert "data-impact" not in top and "pkg-impact" not in top, "a box the branch left alone"
+    assert 'class="pkg-impact" x="10" y="20" width="66.7" height="36"' in core
     # The bar is drawn over the box's own shape and under its name.
-    assert dto.index('class="pkg-impact"') < dto.index("<text>")
-    pop = _html.unescape(dto.split('data-tip-pop="')[1].split('"')[0])
+    assert core.index('class="pkg-impact"') < core.index("<text>")
+    pop = _html.unescape(core.split('data-tip-pop="')[1].split('"')[0])
     assert pop.startswith('<p class="tippophead">Green bar: <b>67%</b> of the lines this PR '
-                          "added in this diagram are in <b>..web.dto</b><br>+6 in 1 file")
-    assert ">D.java</a>" in pop, "named relative to the box the reader hovered"
-    assert f'data-diff-path="{src}/web/dto/D.java"' in pop and f'data-diff-base="{base}"' in pop
-    assert "D.java" not in _html.unescape(web), "counted in the deepest box only"
+                          "added in this diagram are in <b>src.core</b><br>+6 in 1 file")
+    assert ">d.py</a>" in pop, "named relative to the box the reader hovered"
+    assert 'data-diff-path="src/core/d.py"' in pop and f'data-diff-base="{base}"' in pop
+    assert "d.py" not in _html.unescape(handlers), "counted in the deepest box only"
 
 
 def test_a_box_the_branch_left_alone_is_drawn_quiet_and_can_be_filtered(repo, monkeypatch):
@@ -340,23 +315,23 @@ def test_a_box_the_branch_left_alone_is_drawn_quiet_and_can_be_filtered(repo, mo
     or red; a card with such a box gets the All / Impacted filter, a card without none."""
     from hrbuild.shared import snippets
     base = _git(repo, "rev-parse", "HEAD")
-    _write(repo, "shop-api/src/main/java/com/acme/shop/web/A.java", "class X {}\nint a;\n")
+    _write(repo, "src/handlers/h.py", "x = 1\ny = 2\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "one")
     monkeypatch.setattr(snippets, "SNIPPET_BASE", base)
-    added = _box("..web.dto", "..web.dto").replace(
+    added = _box("p_src_core", "src.core").replace(
         "<rect ", '<rect style="stroke:var(--dgm-diff-add);" ')
-    svg = _box("..web", "..web") + added + _box("dom", "Domain")
-    out = folders.link_folders(svg, "shop-api/docs/packages.puml", repo)
-    web, dto, dom = out.split("</g>")[:3]
-    assert "data-quiet" not in web, "the branch changed a file in it"
-    assert "data-quiet" not in dto, "the diff paints it: it is the change"
-    assert 'data-quiet=""' in dom
+    svg = _box("p_src_handlers", "src.handlers") + added + _box("p_libs_core", "libs.core")
+    out = folders.link_folders(svg, "docs/Packages.puml", repo)
+    handlers, core, libs = out.split("</g>")[:3]
+    assert "data-quiet" not in handlers, "the branch changed a file in it"
+    assert "data-quiet" not in core, "the diff paints it: it is the change"
+    assert 'data-quiet=""' in libs
     radios = folders.only_impacted(out)
     assert radios.count('type="radio"') == 2 and 'value="all" checked' in radios
     assert radios == folders.only_impacted(out), "the same page builds to the same bytes"
     assert radios != folders.only_impacted(out + " "), "and each card is its own radio group"
-    assert folders.only_impacted(web + "</g>") == ""
+    assert folders.only_impacted(handlers + "</g>") == ""
 
 
 def test_a_box_named_by_a_folder_path_maps_to_that_folder(tmp_path):

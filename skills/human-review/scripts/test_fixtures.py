@@ -8,7 +8,7 @@ from hrbuild.shared import fixtures as fx
 GLUE = """import {Given, When} from '@cucumber/cucumber';
 // a comment that says seed must not count
 Given('the clinic has these owners', async function () {
-  expect(found, 'is the DB seeded by Flyway?').toBeTruthy();
+  expect(found, 'is the DB seeded?').toBeTruthy();
 });
 Given('a pet born on {word}', async function (d) { await axios.post('/owners', {}); });
 Given('the green household', async function () { await post('/__reset/green'); });
@@ -121,7 +121,7 @@ def test_each_test_starts_from_what_its_code_says(tmp_path):
 def test_a_test_that_declares_no_fixture_starts_empty_and_gets_no_dot(tmp_path):
     """Victor, 21 Oct 2026: a test that does not use a DB fixture starts on an empty
     database. Leaning on seeded rows without saying so is not read as the seed any more —
-    the Background below asserts "is the DB seeded by Flyway?" and still gets nothing."""
+    the Background below asserts "is the DB seeded?" and still gets nothing."""
     reg = fx.fixture_registry(repo(tmp_path))
     for k in ("e2e/src/owners.feature:5", "e2e/src/own.feature:5", "e2e/src/b.spec.ts:3"):
         assert k not in reg["tests"], k
@@ -177,44 +177,6 @@ def test_a_playwright_dbfixture_option_is_read_in_the_scope_it_is_used_in(tmp_pa
     assert "e2e/src/scoped.spec.ts:2" not in tests and "e2e/src/scoped.spec.ts:7" not in tests
 
 
-HOOKS = """package x.functional;
-import io.cucumber.java.Before;
-public class DatabaseHooks {
-    @Before
-    public void reset() {
-        jdbc.execute("TRUNCATE TABLE visits, pets, owners RESTART IDENTITY CASCADE");
-    }
-}
-"""
-
-
-def test_a_jvm_scenario_starts_on_what_its_flyway_loads_unless_a_hook_empties_it(tmp_path):
-    root = repo(tmp_path)
-    feature = ("Feature: a\n  Scenario: one\n    Given x\n\n"
-               "  @fixture:green\n  Scenario: two\n    Given y\n")
-    for name, text in {"api/pom.xml": "<project/>",
-                       "api/src/main/resources/application.properties":
-                           "spring.flyway.locations=classpath:db/migration,classpath:db/seed\n",
-                       "api/src/test/resources/features/a.feature": feature,
-                       "hooked/pom.xml": "<project/>",
-                       "hooked/src/main/resources/application.properties":
-                           "spring.flyway.locations=classpath:db/migration,classpath:db/seed\n",
-                       "hooked/src/test/java/x/functional/DatabaseHooks.java": HOOKS,
-                       "hooked/src/test/resources/features/a.feature": feature}.items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text)
-    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    tests = fx.fixture_registry(root)["tests"]
-    assert tests["api/src/test/resources/features/a.feature:2"] == "seed"
-    assert tests["api/src/test/resources/features/a.feature:6"] == "green"
-    # Truncated before each scenario: it starts empty, so no dot — and the hook is its
-    # module's alone.
-    assert "hooked/src/test/resources/features/a.feature:2" not in tests
-    assert tests["hooked/src/test/resources/features/a.feature:6"] == "green"
-    assert fx.fixtures_emptied(root) == {"hooked/src/test/resources/features/a.feature:2":
-                                         {"tables": ["visits", "pets", "owners"], "hook": "DatabaseHooks"}}
-
-
 def test_registry_block_is_script_safe_and_absent_without_fixtures(tmp_path):
     block = fx.render_fixture_registry(repo(tmp_path))
     assert block.startswith('<script type="application/json" id="hr-fixtures">')
@@ -225,141 +187,9 @@ def test_registry_block_is_script_safe_and_absent_without_fixtures(tmp_path):
     assert fx.render_fixture_registry(empty) == ""
 
 
-def test_the_script_words_the_tip_like_the_demo_bar_and_opens_the_dataset():
+def test_the_script_words_the_tip_and_the_dot_opens_nothing():
     js = (Path(fx.__file__).resolve().parent.parent / "assets" / "fixtures.js").read_text()
     assert "'DB Fixture: ' + (name === 'seed' ? 'Default' : name)" in js
-    assert "window.hrOpenDataset" in js
+    assert "hrOpenDataset" not in js and "click to view" not in js, "no dataset view to open"
     assert "MutationObserver" in js
     assert "fx-free" not in js and "fx-empty" not in js, "no dot is how a test says it starts empty"
-
-
-SPRING_TEST = """package x.rest;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.test.context.jdbc.Sql;
-
-@SpringBootTest
-@AutoConfigureEmbeddedDatabase(provider = ZONKY)
-@Transactional
-class VisitTest {
-    @Autowired Repo repo;
-
-    @Test
-    void makesItsOwnRows() {
-        repo.save(new Owner());
-    }
-
-    @Test
-    void readsTheSeededOwner() {
-        assertThat(repo.findAll()).as("the seeded owners").isNotEmpty();
-    }
-
-    // a comment that says seed must not count
-    @Test
-    @Sql({"/db/fixtures/green.sql"
-    })
-    void startsOnGreen() {
-        repo.findAll();
-    }
-
-    @Test
-    @Sql("/somewhere/else.sql")
-    void loadsAScriptThatIsNoFixture() {
-    }
-}
-"""
-
-PLAIN_TEST = """package x;
-class MathTest {
-    @Test
-    void adds() { assertEquals(2, 1 + 1); }
-}
-"""
-
-
-def _jvm_repo(tmp_path: Path, props: str) -> Path:
-    root = repo(tmp_path)
-    for name, text in {
-            "api/src/main/resources/application.properties": props,
-            "api/src/main/resources/db/migration/V1__init.sql": "-- schema",
-            "api/src/main/resources/db/seed/R__seed.sql": "-- seed rows",
-            "api/src/test/java/x/rest/VisitTest.java": SPRING_TEST,
-            "api/src/test/java/x/MathTest.java": PLAIN_TEST}.items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text)
-    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    return root
-
-
-def test_a_spring_test_on_a_flyway_with_the_seed_starts_on_it(tmp_path):
-    """Victor, 19 Oct 2026: API rows never showed a fixture dot. A Spring test on a Flyway
-    DB whose locations include the seed starts from it — read off the configuration, for
-    every test, whatever its code mentions; `@Sql` of a fixture names that one; a test with
-    no Spring context touches no DB. Keyed by the method's declaration line, as testcov keys
-    the Tests tab's rows."""
-    root = _jvm_repo(tmp_path, "spring.flyway.locations=classpath:db/migration,classpath:db/seed\n")
-    tests = fx.fixture_registry(root)["tests"]
-    f = "api/src/test/java/x/rest/VisitTest.java"
-    assert tests[f"{f}:18"] == "seed" and tests[f"{f}:13"] == "seed"
-    assert tests[f"{f}:26"] == "green"                       # @Sql of a fixture
-    assert f"{f}:32" not in tests                            # not ours to name
-    assert not any(k.startswith("api/src/test/java/x/MathTest") for k in tests)
-
-
-def test_a_spring_test_on_a_flyway_without_the_seed_starts_empty(tmp_path):
-    root = _jvm_repo(tmp_path, "spring.flyway.locations=classpath:db/migration\n")
-    tests = fx.fixture_registry(root)["tests"]
-    f = "api/src/test/java/x/rest/VisitTest.java"
-    assert f"{f}:18" not in tests and f"{f}:13" not in tests
-    assert tests[f"{f}:26"] == "green"                       # its own @Sql still says so
-
-
-DECLARING_TEST = """package x.rest;
-
-@SpringBootTest
-@AutoConfigureEmbeddedDatabase(provider = ZONKY)
-class OwnerTest {
-    @Test
-    void startsEmpty() {}
-
-    @Test
-    @DefaultFixture // reads Kevin
-    void readsTheSeed() {}
-
-    @Test
-    @Sql("classpath:db/seed/R__seed.sql")
-    void loadsTheSeedItself() {}
-}
-"""
-
-DEFAULT_FIXTURE = """package x;
-
-import org.springframework.test.context.jdbc.Sql;
-
-/** The seed, declared. */
-@Retention(RetentionPolicy.RUNTIME)
-@Sql("classpath:db/seed/R__seed.sql")
-public @interface DefaultFixture {
-}
-"""
-
-
-def test_tests_config_without_the_seed_and_a_declared_default(tmp_path):
-    """Petclinic since 21 Oct 2026: the main config loads the seed, the tests'
-    `config/application.properties` drops it, and a test that reads seeded rows says
-    `@DefaultFixture` — an annotation of the module's own, carrying `@Sql` of the seed."""
-    root = _jvm_repo(tmp_path, "spring.flyway.locations=classpath:db/migration,classpath:db/seed\n")
-    for name, text in {
-            "api/src/test/resources/config/application.properties":
-                "spring.flyway.locations=classpath:db/migration,classpath:db/reference\n",
-            "api/src/test/java/x/DefaultFixture.java": DEFAULT_FIXTURE,
-            "api/src/test/java/x/rest/OwnerTest.java": DECLARING_TEST}.items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text)
-    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    tests = fx.fixture_registry(root)["tests"]
-    f = "api/src/test/java/x/rest/OwnerTest.java"
-    assert f"{f}:7" not in tests                             # declares nothing: empty
-    assert tests[f"{f}:11"] == "seed"                        # @DefaultFixture
-    assert tests[f"{f}:15"] == "seed"                        # @Sql of the seed's own file
-    assert f"api/src/test/java/x/rest/VisitTest.java:13" not in tests

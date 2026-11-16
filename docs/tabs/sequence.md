@@ -16,10 +16,10 @@
   trace are, and under them a screenshot of a trace in Grafana Tempo: one of a test on the
   tab, linked to that test's diagram so the two can be compared, when the run had a Grafana
   to shoot it in — otherwise an example kept with the skill.
-- **One fold per test** — tagged API · JUnit, UI · Playwright or UI · Gherkin. Open one and
+- **One fold per test** — tagged API · pytest, UI · Playwright or UI · Gherkin. Open one and
   the diagram that test's run actually produced is beside its source.
 - **Why each picture is there** — `tagged` (the test carries `@generate_sequence` /
-  `@GenerateSequence`) or `new test` / `edited test` (the branch wrote it, and the step traced
+  `@pytest.mark.genseq`) or `new test` / `edited test` (the branch wrote it, and the step traced
   it untagged). A line under the title names the branch's tests that were traced, the ones
   that came back without a picture, and the ones left out — over the cap, or in a file no
   traced suite runs.

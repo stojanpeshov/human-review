@@ -580,7 +580,7 @@ def test_a_drop_is_read_after_a_rename_so_one_entry_covers_both_names():
     assert set(g.nodes) == {"Browser", "Backend"}
 
 
-#: What petclinic's generator writes for petclinic-commons: a jar linked into both JVMs,
+#: What a tracing generator writes for a shared library bundled into both services,
 #: on a two-line label, called by Backend, calling back into it.
 LIBRARY_SEQUENCE = r"""
     @startuml

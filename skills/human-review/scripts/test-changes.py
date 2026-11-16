@@ -10,9 +10,9 @@ to; this script says what happened to it.
 
 The question underneath all of it is whether the branch left fewer tests running than it
 found, and that has three answers, not one: a test can be deleted, commented out, or
-left in place under an `@Disabled`. All three cost the run the same test, and only the
-first shows up as a removal in a diff -- the other two read as "still there" to anyone
-skimming. So each side is scanned for what is *declared* and for what is *switched off*,
+left in place under a skip marker (`@pytest.mark.skip`, `it.skip`). All three cost the
+run the same test, and only the first shows up as a removal in a diff -- the other two
+read as "still there" to anyone skimming. So each side is scanned for what is *declared* and for what is *switched off*,
 and the page states one reconciled pair of numbers: how many tests entered the run and
 how many left it, by whatever route.
 
@@ -29,7 +29,7 @@ parsed for its test declarations, and the two name sets decide:
 
 and carries, alongside that, whether it runs now and whether it ran before:
 
-    @Disabled / it.skip / t.Skip() -> silenced: "disabled"
+    @pytest.mark.skip / it.skip / t.Skip() -> silenced: "disabled"
     declaration only inside a comment -> silenced: "commented" (reported as deleted,
                                        because the run has lost it either way)
 
@@ -72,10 +72,7 @@ from hrbuild.shared.forge import forge_at, forge_from_any_remote  # noqa: E402
 # By path, not by content: a file is a test because of where it sits and what it is
 # called, which is the same rule the build systems in this repository already apply.
 TEST_FILE = (
-    re.compile(r"(?:^|/)src/test/"),
     re.compile(r"(?:^|/)tests?/"),
-    re.compile(r"[A-Za-z0-9]Tests?\.java$"),
-    re.compile(r"[A-Za-z0-9]IT\.java$"),
     re.compile(r"\.(?:spec|test)\.(?:ts|tsx|js|jsx)$"),
     re.compile(r"(?:^|/)test_[^/]+\.py$"),
     re.compile(r"_test\.go$"),
@@ -92,11 +89,6 @@ def is_test_file(rel: str) -> bool:
 # --------------------------------------------------------------------------- #
 # One declaration pattern per language. Each returns the *name* a human would use for
 # the test, because that is what the content file names and what the page prints.
-JAVA_METHOD = re.compile(r"^\s*(?:(?:public|private|protected|static|final|default)\s+)*"
-                         r"(?:<[^>]+>\s*)?[\w.<>\[\], ?]+\s+(\w+)\s*\(")
-JAVA_TEST_ANNOTATION = re.compile(r"^\s*@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b")
-JAVA_TYPE = re.compile(r"^\s*(?:(?:public|protected|private|static|final|abstract|sealed)\s+)*"
-                       r"(?:class|interface|record|enum)\s+\w+")
 # `it(...)`, `test(...)`, and their modifiers -- `it.only`, `test.skip`, `xit`, and the
 # table form `it.each([...])('name', ...)`, whose title sits in the *second* call.
 # The title runs to the first *unescaped* closing quote: `it('ends the newer one\'s
@@ -124,11 +116,10 @@ GHERKIN_CASE = re.compile(r"^\s*(?:Scenario|Scenario Outline|Scenario Template|E
 # what counts as a silenced test
 # --------------------------------------------------------------------------- #
 # A test stops running for three reasons, and only one of them is deletion. The other two
-# leave the code in the file -- an `@Disabled` on top of it, or a `//` in front of every
+# leave the code in the file -- a skip marker on top of it, or a `//` in front of every
 # line -- and both read as "still there" in a diff a human skims. The reviewer needs the
 # same warning for all three, so silencing is read off the syntax exactly like the
 # declarations above, and nobody has to remember to declare it.
-JAVA_SKIP = re.compile(r"^\s*@(?:Disabled|Ignore)\b")
 # Applied to the matched call head, not to the line: `xit`, `it.skip`, `test.todo`.
 JS_SKIP = re.compile(r"^x|\.(?:skip|todo|failing)\b")
 PY_SKIP = re.compile(r"^\s*@(?:\w+\.)*(?:skip|skipif|skipIf|skipUnless|xfail)\b")
@@ -142,50 +133,9 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip())
 
 
-def _java_scan(lines: list[str]) -> dict[str, tuple[int, str | None]]:
-    """A JUnit method is a test because it carries a test annotation, not because it is
-    `void`. Helper methods in the same class are `void` too, and counting them would put
-    a `setUp` in a requirement's coverage list.
-
-    The `@Disabled` that silences one may sit on the method or on the class around it, so
-    a disabled type declaration hands its state down to everything indented under it --
-    which is also what keeps a `@Disabled` on a `@Nested` class from silencing its
-    siblings."""
-    out: dict[str, tuple[int, str | None]] = {}
-    annotated = skip = False
-    off_from: int | None = None      # indent of the innermost type declaration turned off
-    for i, line in enumerate(lines, start=1):
-        if JAVA_TEST_ANNOTATION.match(line):
-            annotated = True
-            continue
-        if JAVA_SKIP.match(line):
-            skip = True
-            continue
-        if not line.strip() or line.lstrip().startswith(("//", "*", "/*", "@")):
-            continue
-        indent = _indent(line)
-        if JAVA_TYPE.match(line):
-            if off_from is not None and indent <= off_from:
-                off_from = None      # that class closed before this one opened
-            if skip and off_from is None:
-                off_from = indent
-            annotated = skip = False
-            continue
-        m = JAVA_METHOD.match(line)
-        if m:
-            if annotated:
-                inside = off_from is not None and indent > off_from
-                out.setdefault(m.group(1), (i, "disabled" if skip or inside else None))
-            annotated = skip = False
-        elif line.strip().endswith(("{", "}", ";")):
-            # Anything else that closes a statement ends the annotation's reach.
-            annotated = skip = False
-    return out
-
-
 def _js_scan(lines: list[str]) -> dict[str, tuple[int, str | None]]:
     """`xdescribe` / `describe.skip` silences every case nested in it, so a suite that is
-    switched off is tracked by the indent it opened at, the same way Java's class is."""
+    switched off is tracked by the indent it opened at, the same way a skipped Python class is."""
     out: dict[str, tuple[int, str | None]] = {}
     off_from: int | None = None
     for i, line in enumerate(lines, start=1):
@@ -275,8 +225,6 @@ def _gherkin_scan(lines: list[str]) -> dict[str, tuple[int, str | None]]:
 def scan_cases(rel: str, text: str) -> dict[str, tuple[int, str | None]]:
     """`{test name: (1-based declaration line, why it does not run | None)}`."""
     lines = text.splitlines()
-    if rel.endswith(".java"):
-        return _java_scan(lines)
     if rel.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs")):
         return _js_scan(lines)
     if rel.endswith(".py"):
@@ -311,7 +259,7 @@ def _uncomment(rel: str, text: str) -> str:
     found in it keeps the line number it has on disk and stays clickable."""
     if rel.endswith((".py", ".feature")):
         pat = UNCOMMENT_HASH
-    elif rel.endswith((".java", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go")):
+    elif rel.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".go")):
         pat = UNCOMMENT_SLASH
     else:
         return text
@@ -382,7 +330,7 @@ def _row(name: str, rel: str, status: str, line: int | None,
 # so eval run 8's OwnerSearchThroughLatencyProxyTest, one test with its assertion rewritten,
 # came out `unchanged` and the ✏️ chip read one short. It also charged a changed
 # `@ValueSource` to the test *above* it, and a helper edited between two tests to the first.
-_BRACED = (".java", ".kt", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go")
+_BRACED = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".go")
 _STRINGS = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`")
 _GHERKIN_STOP = re.compile(r"^\s*(?:Scenario|Scenario Outline|Scenario Template|Example|"
                            r"Rule|Feature|Background)\s*:|^\s*@")
@@ -467,11 +415,8 @@ def _removed_within(span: tuple[int, int] | None, removed: dict[int, int]) -> bo
 #
 # Conservative on purpose: same file only, a call written in the test's own lines only
 # (`helper(`, `this.helper(`, `self.helper(` — not a method reference, not a helper reached
-# through another helper, not a `@BeforeEach` nobody calls by name), and the helper must
+# through another helper, not a `beforeEach` or fixture nobody calls by name), and the helper must
 # be a declaration outside every test's own lines.
-_NOT_A_DECL = frozenset(("return", "new", "else", "throw", "if", "for", "while", "switch",
-                         "catch", "synchronized", "do", "try", "case", "assert", "yield",
-                         "await"))
 JS_HELPER = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*\("
                        r"|^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?"
                        r"(?:function\b|\([^)]*\)\s*(?::[^=]*)?=>|\w+\s*=>)")
@@ -484,14 +429,6 @@ def _helper_name(rel: str, line: str) -> str | None:
     s = line.strip()
     if not s or s.startswith(("//", "*", "/*", "@", "#")):
         return None
-    if rel.endswith((".java", ".kt")):
-        m = JAVA_METHOD.match(line)
-        if not m or s.endswith(";"):
-            return None
-        head = line[:m.start(1)]
-        if "=" in head or m.group(1) in _NOT_A_DECL or set(head.split()) & _NOT_A_DECL:
-            return None
-        return m.group(1)
     if rel.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs")):
         m = JS_HELPER.match(line)
         return (m.group(1) or m.group(2)) if m else None
@@ -647,7 +584,7 @@ def totals(rows: list[dict]) -> dict:
 
     A test counts as *running* when it is declared and not silenced, which is what makes
     the three ways of losing one commensurable: deleting it, commenting it out and
-    hanging an `@Disabled` on it all cost the run exactly one test, and a reviewer told
+    hanging a skip marker on it all cost the run exactly one test, and a reviewer told
     only about the first has been told the smallest of the three truths. It also stops
     the count from moving on a test that was already switched off before the branch
     touched it -- deleting a test nobody was running changes nothing.

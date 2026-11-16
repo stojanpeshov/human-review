@@ -36,20 +36,6 @@ test('Never drawn',
   });
 """
 
-# Its method moved from line 4 to line 8; the diagram titles it the way JUnit does.
-JAVA = """class AddVisitApiTest {
-    @Test
-    void untagged() {
-    }
-
-    @GenerateSequence
-    @Test
-    void addsAVisit() throws Exception {
-        call("{x}");
-    }
-}
-"""
-
 FEATURE = """Feature: owners
 
   Scenario: Plain listing
@@ -76,15 +62,12 @@ def _repo(tmp_path, *, commit_tests_after_trace: bool):
     gen.mkdir(parents=True)
     (gen / "add-visit.spec.ts.add-a-visit.genseq.puml").write_text(
         _puml("t/add-visit.spec.ts", 3, "Add a visit"))
-    (gen / "AddVisitApiTest.java.adds-a-visit.genseq.puml").write_text(
-        _puml("b/AddVisitApiTest.java", 4, "AddVisitApiTest: adds a visit"))
     (gen / "owners.feature.searching.genseq.puml").write_text(
         _puml("t/owners.feature", 2, "Searching shows the first page"))
     run("add", "-A")
     env = dict(os.environ, GIT_COMMITTER_DATE="2026-10-12T18:00:00", GIT_AUTHOR_DATE="2026-10-12T18:00:00")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "traced"], check=True, env=env)
-    for rel, text in {"t/add-visit.spec.ts": SPEC, "b/AddVisitApiTest.java": JAVA,
-                      "t/owners.feature": FEATURE}.items():
+    for rel, text in {"t/add-visit.spec.ts": SPEC, "t/owners.feature": FEATURE}.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(text)
     run("add", "-A")
@@ -99,9 +82,6 @@ def test_a_diagram_whose_test_moved_down_still_names_that_test(tmp_path):
     root = _repo(tmp_path, commit_tests_after_trace=True)
     assert seq._scenarios_drawn("t/generated/add-visit.spec.ts.add-a-visit.genseq.puml",
                                 "t/add-visit.spec.ts", root) == [(9, "Add a visit")]
-    assert seq._scenarios_drawn("t/generated/AddVisitApiTest.java.adds-a-visit.genseq.puml",
-                                "b/AddVisitApiTest.java", root) == [
-        (8, "AddVisitApiTest: adds a visit")]
     assert seq._scenarios_drawn("t/generated/owners.feature.searching.genseq.puml",
                                 "t/owners.feature", root) == [
         (7, "Searching shows the first page")]
@@ -110,8 +90,7 @@ def test_a_diagram_whose_test_moved_down_still_names_that_test(tmp_path):
 def test_a_scenario_is_never_both_drawn_and_undrawn(tmp_path):
     root = _repo(tmp_path, commit_tests_after_trace=True)
     drawn, undrawn = seq.derived_snippets(root)
-    assert [x["ref"] for x in drawn] == ["b/AddVisitApiTest.java:6-10",
-                                         "t/add-visit.spec.ts:9-13", "t/owners.feature:6-8"]
+    assert [x["ref"] for x in drawn] == ["t/add-visit.spec.ts:9-13", "t/owners.feature:6-8"]
     # Only the test no diagram names at all, quoted from its own declaration.
     assert [x["ref"] for x in undrawn] == ["t/add-visit.spec.ts:15-19"]
 
@@ -152,4 +131,4 @@ def test_the_tab_shows_no_undrawn_group_for_a_test_that_only_moved(tmp_path, mon
     out, _, _ = seq.render_testpairs(block, {}, [], root, root / ".human-review")
     assert "no diagram yet" not in out
     # The moved test is recognised as the tagged one it is.
-    assert out.count('data-why="tagged"') == 3
+    assert out.count('data-why="tagged"') == 2

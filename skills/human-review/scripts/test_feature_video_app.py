@@ -213,7 +213,7 @@ def test_a_stack_another_step_wrote_into_is_reset_before_it_is_filmed(tmp_path, 
     posts = []
     ctx, sh = _reused(tmp_path, monkeypatch, {**APP, "reset": "/__reset"}, posts)
     steps._video(ctx)
-    # The endpoint the page's own Reset button presses, on the instance the film is of.
+    # The environment's reset endpoint, on the instance the film is of.
     assert posts == ["http://localhost:51999/__reset"]
     assert "BASE_URL=http://localhost:51999" in sh.first("record-feature-video.sh")
     # Reused, so left up for the steps after it — the reset is not a reason to tear down.
@@ -372,14 +372,12 @@ def test_the_deployed_app_row_is_the_films_own_app_block(tmp_path):
     assert "Running app" in page and "Start App in Docker" in page
     assert html.escape(f"cd {root} && ./start-docker.sh up --ref {sha} --ttl 1800") in page
     assert html.escape(f"./start-docker.sh down petclinic-{short}") in page
-    assert 'data-reset="/__reset"' in page
+    assert "data-reset" not in page, "the Seed/DB Fixture controls are gone"
     # The config's commands win over the content file's (441021c, 5 Oct 2026: a hand-typed
-    # `cd ~/workspace/petclinic-pr && …` went stale when the folder was renamed); the content
-    # file still supplies what the config cannot know, such as its own `reset`.
+    # `cd ~/workspace/petclinic-pr && …` went stale when the folder was renamed).
     mine = build.video_html({"video": "assets/feature.webm",
-                             "runtime": {"command": "make up", "reset": "/__wipe"}}, out)
+                             "runtime": {"command": "make up"}}, out)
     assert "make up" not in mine and "start-docker.sh up" in mine
-    assert 'data-reset="/__wipe"' in mine
 
 
 def test_a_reset_that_is_a_command_is_not_a_button(tmp_path):
@@ -872,15 +870,15 @@ def test_a_skipped_run_drops_the_previous_runs_drawings(tmp_path, monkeypatch):
 
 
 # ── eval run 8: the branch's own tests are traced too, untagged ─────────────────────
-# Only tests carrying @generate_sequence / @GenerateSequence were traced, so none of the
+# Only tests carrying @generate_sequence / @pytest.mark.genseq were traced, so none of the
 # paging and sorting scenarios the branch added got a picture; two of the three diagrams
 # were visit flows that touched the changed GET /api/owners only in their setup.
 
 SELECT = {"max": 4, "suites": {
     "e2e": {"files": ["petclinic-test/src/**/*.feature"], "item": "{file}::{name}",
             "join": "\n", "max": 3},
-    "java": {"files": ["petclinic-backend/src/test/java/**/*.java"],
-             "exclude": ["**/genseq/**"], "item": "{class}#{name}", "join": ","}}}
+    "pytest": {"files": ["backend/tests/**/*.py"],
+               "exclude": ["**/genseq/**"], "item": "{file}::{name}", "join": ","}}}
 
 OWNER_SEARCH = """Feature: Search owners
   @generate_sequence
@@ -897,7 +895,7 @@ OWNER_SEARCH = """Feature: Search owners
 
 def _manifest_tests():
     feat = "petclinic-test/src/owner-search.feature"
-    lst = "petclinic-backend/src/test/java/x/rest/OwnerListTest.java"
+    lst = "backend/tests/rest/test_owner_list.py"
     return {"tests": [
         {"path": feat, "name": "Searching with an empty last name shows the first page",
          "line": 3, "status": "modified"},
@@ -905,14 +903,14 @@ def _manifest_tests():
          "status": "added"},
         {"path": feat, "name": "Sorting by city, then reversing it", "line": 9,
          "status": "added"},
-        {"path": "petclinic-backend/src/test/java/x/repo/MigrationTest.java",
-         "name": "freshDatabase_hasTheIndexes", "line": 30, "status": "added"},
-        {"path": lst, "name": "defaultRequest_returnsFirstTen", "line": 40, "status": "added"},
-        {"path": lst, "name": "requestedPage_isTheSlice", "line": 50, "status": "added"},
-        {"path": lst, "name": "getAll", "line": 60, "status": "modified"},
+        {"path": "backend/tests/repo/test_migration.py",
+         "name": "test_fresh_database_has_the_indexes", "line": 30, "status": "added"},
+        {"path": lst, "name": "test_default_request_returns_first_ten", "line": 40, "status": "added"},
+        {"path": lst, "name": "test_requested_page_is_the_slice", "line": 50, "status": "added"},
+        {"path": lst, "name": "test_get_all", "line": 60, "status": "modified"},
         {"path": "petclinic-frontend/src/app/owner-list.component.spec.ts",
          "name": "opens on the first page", "line": 52, "status": "added"},
-        {"path": "petclinic-backend/src/test/java/x/genseq/Rest.java", "name": "helper",
+        {"path": "backend/tests/genseq/helpers.py", "name": "helper",
          "line": 5, "status": "added"},
         {"path": feat, "name": "an old one", "line": 1, "status": "unchanged"},
     ]}
@@ -928,15 +926,15 @@ def test_the_branchs_new_tests_are_picked_untagged_and_the_suites_take_turns(
 
     picked = [(t["suite"], t["name"]) for t in sel["picked"]]
     # The tagged scenario is traced by its tag and takes no slot; the suites alternate; the
-    # file the branch wrote the most tests in (OwnerListTest) goes before the lone migration
+    # file the branch wrote the most tests in (test_owner_list.py) goes before the lone migration
     # test, and an added test before an edited one.
     assert picked == [("e2e", "Paging forward reaches every owner"),
-                      ("java", "defaultRequest_returnsFirstTen"),
+                      ("pytest", "test_default_request_returns_first_ten"),
                       ("e2e", "Sorting by city, then reversing it"),
-                      ("java", "requestedPage_isTheSlice")]
+                      ("pytest", "test_requested_page_is_the_slice")]
     assert {t["why"] for t in sel["picked"]} == {"written by this branch"}
     left = {t["name"]: t["left"] for t in sel["left"]}
-    assert left["getAll"] == left["freshDatabase_hasTheIndexes"] == \
+    assert left["test_get_all"] == left["test_fresh_database_has_the_indexes"] == \
         "over the cap of 4 traced tests"
     assert left["opens on the first page"] == "no traced suite runs this file"
     assert left["helper"] == "no traced suite runs this file", "excluded by the suite"
@@ -945,28 +943,29 @@ def test_the_branchs_new_tests_are_picked_untagged_and_the_suites_take_turns(
     assert values == {
         "e2e": "owner-search.feature::Paging forward reaches every owner\n"
                "owner-search.feature::Sorting by city, then reversing it",
-        "java": "OwnerListTest#defaultRequest_returnsFirstTen,OwnerListTest#requestedPage_isTheSlice"}
+        "pytest": "test_owner_list.py::test_default_request_returns_first_ten,"
+                  "test_owner_list.py::test_requested_page_is_the_slice"}
 
 
 def test_a_suites_own_cap_and_an_empty_selection(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     sel = steps.select_traced(_manifest_tests(), {**SELECT, "max": 6, "suites": {
-        **SELECT["suites"], "java": {**SELECT["suites"]["java"], "max": 1}}})
-    assert [t["suite"] for t in sel["picked"]].count("java") == 1
+        **SELECT["suites"], "pytest": {**SELECT["suites"]["pytest"], "max": 1}}})
+    assert [t["suite"] for t in sel["picked"]].count("pytest") == 1
     none = steps.select_traced({"tests": []}, SELECT)
-    assert none["picked"] == [] and steps.selection_values(none, SELECT) == {"e2e": "", "java": ""}
+    assert none["picked"] == [] and steps.selection_values(none, SELECT) == {"e2e": "", "pytest": ""}
 
 
 def test_the_selection_reaches_the_commands_as_one_shell_word_and_when_gates_a_run(
         tmp_path, monkeypatch):
     ctx, sh = _steps_ctx(tmp_path, monkeypatch, {"sequence": {"select": SELECT, "commands": [
         "cd petclinic-test && GENSEQ_SELECT={tests.e2e} ./run-tests-with-tracing.sh",
-        {"run": "cd petclinic-backend && mvn -Pgenseq test -Dtest={tests.java}", "when": "java"},
+        {"run": "cd backend && python -m pytest -p hr_genseq {tests.pytest}", "when": "pytest"},
         {"run": "echo never {tests.nope}", "when": "nope"},
     ]}})
     manifest = _manifest_tests()
-    manifest["tests"] = [t for t in manifest["tests"] if "java" not in t["path"]
-                         or "OwnerListTest" in t["path"]]
+    manifest["tests"] = [t for t in manifest["tests"] if not t["path"].endswith(".py")
+                         or "test_owner_list" in t["path"]]
     monkeypatch.setattr(steps, "_test_manifest", lambda ctx: manifest)
 
     steps._sequence(ctx)
@@ -976,18 +975,19 @@ def test_the_selection_reaches_the_commands_as_one_shell_word_and_when_gates_a_r
             "owner-search.feature::Sorting by city, then reversing it' ") in traced
     # No feature file on disk here, so its tag is not seen: the edited scenario is a
     # candidate too, and an added test goes first, so it is the one over the cap.
-    assert sh.first("-Dtest=").endswith(
-        "-Dtest='OwnerListTest#defaultRequest_returnsFirstTen,OwnerListTest#requestedPage_isTheSlice'")
+    assert sh.first("-p hr_genseq").endswith(
+        "-p hr_genseq test_owner_list.py::test_default_request_returns_first_ten,"
+        "test_owner_list.py::test_requested_page_is_the_slice"), "nothing to quote: one word"
     assert not sh.has("echo never"), "a `when` suite with nothing picked boots nothing"
     doc = json.loads(Path(".human-review/assets/sequence.selection.json").read_text())
     assert [t["name"] for t in doc["picked"]][:2] == [
-        "Paging forward reaches every owner", "defaultRequest_returnsFirstTen"]
+        "Paging forward reaches every owner", "test_default_request_returns_first_ten"]
     assert "Searching with an empty last name shows the first page" in \
         [t["name"] for t in doc["left"]]
     assert any("also traced 4 test(s) this branch wrote or edited" in n for n in ctx.notes)
     assert [r["command"] for r in doc["runs"]] == [
         "cd petclinic-test && GENSEQ_SELECT={tests.e2e} ./run-tests-with-tracing.sh",
-        "cd petclinic-backend && mvn -Pgenseq test -Dtest={tests.java}"]
+        "cd backend && python -m pytest -p hr_genseq {tests.pytest}"]
     assert all(r["seconds"] >= 0 for r in doc["runs"])
 
 
@@ -1023,23 +1023,17 @@ def test_each_traced_command_records_how_long_it_took(tmp_path, monkeypatch):
 TRACING_ABORT = ("\x1b[1;33m[tracing]\x1b[0m The stack is not fully up. Start the missing "
                  "pieces, then re-run:\n   • OTLP collector (:4318)    → ./start-grafana.sh\n"
                  "\x1b[1;31m[tracing] aborting — nothing was started or stopped.\x1b[0m\n")
-MVN_NO_TESTS = (
-    "[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0 -- in x.AddVisitApiTest\n"
-    "[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.007 s "
-    "<<< FAILURE! -- in x.functional.FunctionalCucumberTest\n"
-    "[ERROR] x.functional.FunctionalCucumberTest -- Time elapsed: 0.007 s <<< ERROR!\n"
-    "org.junit.platform.suite.engine.NoTestsDiscoveredException: Suite "
-    "[x.functional.FunctionalCucumberTest] did not discover any tests\n"
-    "[ERROR]   FunctionalCucumberTest » NoTestsDiscovered Suite "
-    "[x.functional.FunctionalCucumberTest] did not discover any tests\n"
-    "[INFO] BUILD FAILURE\n")
+PYTEST_NO_TESTS = (
+    "============================= test session starts ==============================\n"
+    "collected 42 items / 42 deselected / 0 selected\n\n"
+    "=========================== 42 deselected in 0.31s ============================\n")
 GENERATOR_SKIPPED_ALL = (
     "> ts-node src/genseq/generate.ts\n"
     "⚠️  \"Add a visit to an existing pet from the owner detail page\": fetch failed — skipped\n"
     "⚠️  \"adds a visit to an existing pet\": fetch failed — skipped\n"
     "📊 Generated 0 diagram(s)\n")
 HR_TRY_4 = ["cd petclinic-test && ./run-tests-with-tracing.sh",
-            "cd petclinic-backend && mvn -o -Pgenseq test -Dgroups=genseq",
+            "cd backend && python -m pytest -p hr_genseq -m genseq",
             "cd petclinic-test && GENSEQ_REFRESH=1 npm run trace:diagram"]
 
 
@@ -1055,7 +1049,7 @@ def test_suites_that_could_not_start_are_skipped_with_their_reason_not_red(
     _committed_diagram(tmp_path)          # what made it "ran, RED" before
     monkeypatch.chdir(tmp_path)
     sh = Recorder([("run-tests-with-tracing.sh", 1, TRACING_ABORT),
-                   ("mvn -o -Pgenseq", 1, MVN_NO_TESTS),
+                   ("pytest -p hr_genseq", 5, PYTEST_NO_TESTS),
                    ("trace:diagram", 0, GENERATOR_SKIPPED_ALL)])
     monkeypatch.setattr(steps, "sh", sh)
     ctx = steps.Ctx("origin/main", {"steps": {"sequence": {"commands": HR_TRY_4}}}, dry=False)
@@ -1065,7 +1059,7 @@ def test_suites_that_could_not_start_are_skipped_with_their_reason_not_red(
     assert row["status"] == steps.SKIPPED, row
     assert "aborting — nothing was started" in row["reason"]
     assert "\x1b[" not in row["reason"]
-    assert "FunctionalCucumberTest discovered no tests under the tag filter" in row["reason"]
+    assert "the runner found no test to run under the filter" in row["reason"]
     assert "collector" in row["reason"]
     verdict = json.loads(Path(".human-review/assets/sequence.verdict.json").read_text())
     assert verdict["state"] == "skipped"
@@ -1078,22 +1072,23 @@ def test_suites_that_could_not_start_are_skipped_with_their_reason_not_red(
 
 
 def test_a_tag_filter_that_matched_nothing_is_not_a_failure():
-    outcome, said = steps.suite_outcome(1, MVN_NO_TESTS)
+    outcome, said = steps.suite_outcome(5, PYTEST_NO_TESTS)
     assert outcome == steps.NO_TESTS
-    assert said == "FunctionalCucumberTest discovered no tests under the tag filter"
+    assert said == "the runner found no test to run under the filter"
     assert steps.suite_outcome(1, "Error: No tests found.\n")[0] == steps.NO_TESTS
     # One real failure beside it and the command is red: an empty filter must not
     # launder a broken test.
-    broken = MVN_NO_TESTS + ("[ERROR] x.AddVisitApiTest.adds -- Time elapsed: 1 s <<< FAILURE!\n"
-                             "org.opentest4j.AssertionFailedError: expected 1\n")
+    broken = ("FAILED tests/test_visit.py::test_adds - assert 2 == 1\n"
+              "==================== 1 failed, 3 passed in 0.52s ====================\n")
     assert steps.suite_outcome(1, broken)[0] == steps.FAILED
+    assert steps.suite_outcome(5, broken)[0] == steps.FAILED
     assert steps.suite_outcome(0, "anything")[0] == steps.RAN
 
 
 def test_a_tag_filter_that_matched_nothing_beside_drawn_diagrams_is_a_note(
         tmp_path, monkeypatch):
     ctx, sh = _steps_ctx(tmp_path, monkeypatch, {"sequence": {"commands": HR_TRY_4[1:2]}})
-    monkeypatch.setattr(steps, "sh", Recorder([("mvn -o -Pgenseq", 1, MVN_NO_TESTS)]))
+    monkeypatch.setattr(steps, "sh", Recorder([("pytest -p hr_genseq", 5, PYTEST_NO_TESTS)]))
     steps._sequence(ctx)                  # ran: no LookupError, no RED
 
     assert not any("RED" in n for n in ctx.notes)

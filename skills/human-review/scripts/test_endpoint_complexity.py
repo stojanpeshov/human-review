@@ -422,15 +422,15 @@ def test_every_class_is_the_same_faded_box_and_its_methods_are_plain_cards():
 def test_class_and_method_names_are_the_links_and_the_graph_has_no_arrow(tmp_path, monkeypatch):
     """Victor, 4 Nov 2026: the ↗ goes; both names underline under the pointer and open the
     editor, the class at its declaration, the method at its own line."""
-    java = tmp_path / "Map.java"
-    java.write_text("package a;\n\n// class Map, in a comment\npublic class Map {\n"
-                    "  int toDto() { return 1; }\n}\n", encoding="utf-8")
-    monkeypatch.setattr(delta, "entry_source", lambda key: (java, 5))
+    src = tmp_path / "map.py"
+    src.write_text('"""a."""\n\n# class Map, in a comment\nclass Map:\n'
+                   "    def toDto(self):\n        return 1\n", encoding="utf-8")
+    monkeypatch.setattr(delta, "entry_source", lambda key: (src, 5))
     out, _ = delta._graph([_gnode("a.Map#go", calls=["a.Map#toDto"]),
                            _gnode("a.Map#toDto", cog=1)])
     assert "↗" not in out and "cg-go\"" not in out
-    assert re.search(rf'<a class="cg-c" href="vscode://file/{java}:4:1"[^>]*>Map</a>', out)
-    assert re.search(rf'<a class="cg-go-m" href="vscode://file/{java}:5:1"[^>]*>toDto\(\)</a>', out)
+    assert re.search(rf'<a class="cg-c" href="vscode://file/{src}:4:1"[^>]*>Map</a>', out)
+    assert re.search(rf'<a class="cg-go-m" href="vscode://file/{src}:5:1"[^>]*>toDto\(\)</a>', out)
     assert re.search(r"a\.cg-c:hover, a\.cg-go-m:hover, a\.cx-path:hover \{"
                      r"[^}]*text-decoration:underline", delta.CSS)
 

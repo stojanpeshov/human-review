@@ -672,10 +672,10 @@ def _detour(geo: dict, src: str, tgt: str, gap: float = 30.0):
 
 # ── linking a box to the class it names ───────────────────────────────────────────
 
-# `class Owner [[src://petclinic-backend/.../Owner.java:32{Click to open in editor}]] {`
-# — one line of the PlantUML that `DomainModelExtractorTest` regenerates from the code.
+# `class Owner [[src://src/core/models/owner.py:32{Click to open in editor}]] {` — one line
+# of a domain-model PlantUML a generator writes from the code.
 CLASS_LINK = re.compile(
-    r"^\s*(?:abstract\s+|final\s+)?(?:class|entity|enum|interface)\s+(?P<name>\w+)\s*"
+    r"^\s*(?:abstract\s+)?(?:class|entity|enum|interface)\s+(?P<name>\w+)\s*"
     r"\[\[src://(?P<path>[^\s:\]]+)(?::(?P<line>\d+))?(?:\{[^}]*\})?[^\]]*\]\]",
     re.M)
 
@@ -683,17 +683,16 @@ CLASS_LINK = re.compile(
 def concept_sources(puml: Path) -> dict:
     """concept name → (repo-relative path, line), read off the generated domain model.
 
-    Deliberately not a second name-matching scheme. `DomainModelExtractor` is the one
-    thing that decides what a domain class is, and its javadoc says so out loud: two
-    guardrails compare a drawing against it — `DomainModelExtractorTest`, which
-    regenerates this PlantUML, and `ConceptualModelDiagramTest`, which checks the
-    hand-laid-out draw.io map against the same extractor. So the PlantUML *is* that
-    resolution, already run, already carrying the line each class is declared on.
+    Deliberately not a second name-matching scheme. The generator that writes this
+    PlantUML is the one thing that decides what a domain class is, and a guardrail that
+    checks the hand-laid-out draw.io map is meant to check it against the same answer. So
+    the PlantUML *is* that resolution, already run, already carrying the line each class
+    is declared on.
 
-    A concept the map declares and this file does not name therefore cannot happen while
-    the guardrail is green. If it ever does, the diagram and the test disagree and the
-    test is the one that is right — so the box loses its link and the caller says so,
-    rather than the page shipping an anchor pointing at a class that is not there.
+    A concept the map declares and this file does not name means the diagram and the
+    code disagree, and the code is the one that is right — so the box loses its link and
+    the caller says so, rather than the page shipping an anchor pointing at a class that
+    is not there.
     """
     if not puml or not Path(puml).is_file():
         return {}
@@ -1322,8 +1321,8 @@ def main():
                          "`--tested-against` label links to it in VS Code. Without it the "
                          "label is plain text")
     ap.add_argument("--tested-against", metavar="WHAT",
-                    help="what a unit test checks this drawing against (e.g. `Java Domain "
-                         "Model`), for the sentence under the picture. Recorded, not "
+                    help="what a unit test checks this drawing against (e.g. `SQLAlchemy "
+                         "models`), for the sentence under the picture. Recorded, not "
                          "inferred: only the project knows which guardrail keeps it honest")
     ap.add_argument("--json", action="store_true",
                     help="print the verdict as JSON instead of a summary line")

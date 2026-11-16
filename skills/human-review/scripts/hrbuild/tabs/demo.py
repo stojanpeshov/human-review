@@ -7,11 +7,8 @@ import re
 import shlex
 from pathlib import Path
 
-from ..shared.adopt import adopt_html
-from ..shared.commands import _app_anchor, fixtures_row_html, runtime_html
-from ..shared.fixtures import demo_fixtures
+from ..shared.commands import _app_anchor, runtime_html
 from ..shared.util import _git
-from dataset_view import dataset_html, fixtures_panel_html
 
 def _link_captions(cues, links, drive=False):
     """Put the app links *inside* the narration, on the words that already name the page.
@@ -236,10 +233,7 @@ def _project_root(out_dir: Path) -> Path | None:
 
 def derived_runtime(out_dir: Path) -> dict:
     """`runtime` off `steps.video.app` — the very commands the film was made with, for the
-    commit under review, so the reader's Start brings up what the film showed.
-
-    `reset` only as a path (`/__reset`): the row's Reset button POSTs it to whatever
-    instance is up, and a shell command is nothing a browser can press."""
+    commit under review, so the reader's Start brings up what the film showed."""
     root = _project_root(out_dir)
     if root is None:
         return {}
@@ -272,8 +266,6 @@ def derived_runtime(out_dir: Path) -> dict:
     # Running Database row's JDBC URL.
     if app.get("db"):
         rt["dbCommand"] = line(app["db"])
-    if str(app.get("reset") or "").startswith("/"):
-        rt["reset"] = app["reset"]
     return rt
 
 
@@ -331,7 +323,7 @@ def video_html(s, out_dir: Path) -> str:
     # content file typed: those are pinned to this checkout's real path and commit, while a
     # model's hand-written `cd ~/workspace/petclinic-pr && …` went stale the day the folder
     # was renamed (3 Oct 2026) and every Start said "start failed". The content file keeps
-    # what the config cannot know — `base`, `drive`, its own `reset`.
+    # what the config cannot know — `base`, `drive`.
     rt = dict(s.get("runtime") or {})
     for key, value in derived_runtime(out_dir).items():
         if value and (key in ("command", "stop", "urlCommand", "dbCommand")
@@ -354,26 +346,7 @@ def video_html(s, out_dir: Path) -> str:
     # two-column grid, so a band emitted as one of its children takes a column and stands
     # next to the picture instead of across the top of it. What it contradicts is the
     # picture, so it has to be the thing read first, full width.
-    head = ""
-    if rt:
-        root = _project_root(out_dir)
-        fixtures = demo_fixtures(root)
-        can_reset = bool(rt.get("reset"))
-        # The DB fixtures are a card of their own under the Running app one (Victor, 9 Oct
-        # 2026), not a second row inside it: `runtime_html` still draws that row, so it is
-        # cut back out here, exactly as drawn — and once it stops drawing it, this is a no-op.
-        head = runtime_html(rt, fixtures=fixtures).replace(
-            fixtures_row_html(fixtures, can_reset), "", 1)
-        # Each fixture's tables, under its own header: computed from the project's own seed
-        # and fixture SQL (`dataset_view.py`), so they need no app running.
-        data = dataset_html(root)
-        if data or len(fixtures) > 1 or can_reset:
-            head += fixtures_panel_html(fixtures, can_reset,
-                                        # the pill and its (i), as on every card: an (i)
-                                        # alone explained a button that was not there
-                                        adopt_html("behaviour.seed", how="in"),
-                                        root=root)
-            head += data
+    head = runtime_html(rt) if rt else ""
     # The film's title heads the transcript column, not a row of its own above the player:
     # a row across the page held two words and left the rest of it empty (Victor, 7 Oct
     # 2026), and the player now starts right under the Running app band. The tab's presses

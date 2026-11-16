@@ -17,10 +17,10 @@ against any Grafana that still holds the traces:
 Which trace: each candidate diagram (`--diagram`, default every `*.genseq.puml` the page
 can show) is named `<test file>.<scenario slug>.genseq.puml`, and the scenario's own run
 stamped its name on a span (`--attribute`, default `span.test.name`). The slug is turned
-back into a case-insensitive pattern over that attribute, so a JUnit
-`contentCarriesNestedPetsTypesAndVisits()` and its file
-`OwnerListTest.java.contentcarriesnestedpetstypesandvisits.genseq.puml` meet without this
-script knowing anything about JUnit. Then, in order:
+back into a case-insensitive pattern over that attribute, so a test named
+`test_content_carries_nested_pets` and its file
+`test_owners.py.test-content-carries-nested-pets.genseq.puml` meet without this script
+knowing anything about the test framework. Then, in order:
 
   * a test whose whole run is ONE trace, before a test that made several — one trace for
     one diagram is the comparison the picture exists for;
@@ -76,7 +76,7 @@ _SEP = "[^a-z0-9]"
 
 
 def scenario_of(diagram: str) -> tuple[str, str]:
-    """`…/AddVisitApiTest.java.adds-a-visit.genseq.puml` -> `("AddVisitApiTest.java",
+    """`…/add-visit.spec.ts.adds-a-visit.genseq.puml` -> `("add-visit.spec.ts",
     "adds-a-visit")`: the generator names a diagram after its test file and the slug of the
     scenario, and a slug has no dots in it."""
     stem = Path(diagram).name

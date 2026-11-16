@@ -25,11 +25,11 @@ How, in three moves, none of which opens a port:
      own definition and the workspace's styles are the same on both sides. Pixels are no
      use for this: the renderer lays out on the client, and ids move between runs.
 
-**Which test reads it.** A DSL is often parsed by a guardrail test (petclinic's
-`C3ArchTest` checks the components against the Java packages). Every test source that
-names the DSL file is read for *what level it checks* — `getComponents()` / `instanceof
-Component` for components, `getContainers()` / `instanceof Container` for containers — so a
-card can say truthfully whether its boxes are compared with the code or only drawn by hand.
+**Which test reads it.** A DSL is often parsed by a guardrail test that checks its
+components against the code's packages. Every test source that names the DSL file is read
+for *what level it checks* — `.components` / `isinstance(…, Component)` for components,
+`.containers` / `isinstance(…, Container)` for containers — so a card can say truthfully
+whether its boxes are compared with the code or only drawn by hand.
 
 Output (default `.human-review/assets/c4/`):
 
@@ -316,8 +316,8 @@ def view_signatures(ws: dict) -> dict[str, dict]:
 # ── which test reads the DSL, and at what level ──────────────────────────────────────
 
 LEVEL_PROBES = {
-    "Component": re.compile(r"getComponents\s*\(|instanceof\s+Component\b"),
-    "Container": re.compile(r"getContainers\s*\(|instanceof\s+Container\b"),
+    "Component": re.compile(r"\.(?:get_)?components\b|isinstance\([^)]*\bComponent\b"),
+    "Container": re.compile(r"\.(?:get_)?containers\b|isinstance\([^)]*\bContainer\b"),
 }
 
 
@@ -340,7 +340,7 @@ def tests_reading(root: Path, entry: str) -> list[dict]:
     return found
 
 
-RELATIONSHIP_PROBE = re.compile(r"get(?:Efferent|Afferent)?Relationships\s*\(")
+RELATIONSHIP_PROBE = re.compile(r"\.(?:get_)?(?:efferent_|afferent_)?relationships\b")
 
 LEVEL_WORDS = {"Component": "components", "Container": "containers"}
 
@@ -349,7 +349,7 @@ def tested_note(vtype: str, tests: list[dict]) -> str:
     """One line under the card: are these boxes compared with the code, or drawn by hand?
 
     The *checked* sentence is parsed back by `hrbuild/shared/c4.py:_CHECKED_NOTE`, which
-    turns it into the card's header badge, *ArchUnit-tested vs code*: reword it there too."""
+    turns it into the card's header badge, *Tested vs code*: reword it there too."""
     if not tests:
         return "Hand-maintained: no test reads this workspace."
     checking = [t for t in tests if vtype in t["levels"]]

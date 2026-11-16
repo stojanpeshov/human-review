@@ -19,7 +19,7 @@ The ledger invariants live here now, as code rather than as rules somebody has t
     overwrite each other's index.
 
 Project-specific commands come from `human-review.json` at the repo root — see
-`human-review.example.json`. A step the config does not describe is skipped and named,
+`human-review.ludvig.json`. A step the config does not describe is skipped and named,
 which is the honest rendering of "this project has no such thing"; nothing here is
 petclinic-specific.
 
@@ -128,7 +128,7 @@ class _StepStdout:
 
 def sh(cmd, ctx: Ctx, check=True, capture=False) -> subprocess.CompletedProcess:
     """One command, echoed. A step's commands are shell strings because half of them are
-    the project's own (`cd x && mvn …`), and quoting those into a list buys nothing."""
+    the project's own (`cd x && pytest …`), and quoting those into a list buys nothing."""
     print(f"    $ {cmd}", flush=True)
     if ctx.dry:
         return subprocess.CompletedProcess(cmd, 0, "", "")
@@ -693,18 +693,18 @@ def _sequence(ctx: Ctx):
 #: Which tests `_sequence` traced beyond the tagged ones, and why — for the Sequence tab to
 #: say beside each picture whether it exists because somebody tagged the test or because
 #: this branch wrote it, and to name the branch's tests that were left untraced. Eval run 8:
-#: only `@generate_sequence` / `@GenerateSequence` tests were traced, so none of the paging
+#: only `@generate_sequence`-tagged tests were traced, so none of the paging
 #: and sorting scenarios the branch added got a picture, and two of the three diagrams were
 #: visit flows that only touched the changed `GET /api/owners` in their setup.
 SEQ_SELECTION = ART / "sequence.selection.json"
 
 #: `steps.sequence.select` defaults. `max` bounds the run: every traced test costs a Tempo
-#: fetch and a picture, and a JVM suite a context boot on top.
+#: fetch and a picture.
 SELECT_MAX = 6
 SELECT_STATUSES = ("added", "modified")
 #: What marks a test as already traced by its tag, looked for on the lines that belong to
-#: its declaration (annotations / Gherkin tags above it, a Playwright options object below).
-SELECT_TAGGED = r"@generate_sequence\b|@GenerateSequence\b|GENERATE_SEQUENCE_TAG"
+#: its declaration (a pytest marker / Gherkin tag above it, a Playwright options object below).
+SELECT_TAGGED = r"@generate_sequence\b|@pytest\.mark\.genseq\b|GENERATE_SEQUENCE_TAG"
 #: `{tests.<suite>}` in a command: that suite's selection, joined and shell-quoted.
 _SEL_PLACEHOLDER = re.compile(r"\{tests\.([A-Za-z0-9_-]+)\}")
 
@@ -816,11 +816,11 @@ def select_traced(manifest: dict, select: dict) -> dict:
 
 def _selection_item(test: dict, template: str) -> str:
     """One test as its suite's command spells it: `{name}`, `{file}` (basename), `{path}`,
-    `{line}`, `{class}` (the file's stem — a JUnit class)."""
+    `{line}`."""
     path = test["path"]
     fields = {"name": test["name"], "file": Path(path).name, "path": path,
-              "line": str(test.get("line") or ""), "class": Path(path).stem}
-    return re.sub(r"\{(name|file|path|line|class)\}", lambda m: fields[m.group(1)], template)
+              "line": str(test.get("line") or "")}
+    return re.sub(r"\{(name|file|path|line)\}", lambda m: fields[m.group(1)], template)
 
 
 def selection_values(selection: dict | None, select: dict) -> dict[str, str]:
@@ -845,8 +845,8 @@ def traced_commands(commands, values: dict[str, str]) -> list[tuple[str, str]]:
     """`(as configured, as run)` for every command that runs.
 
     A command is a string, run always, or `{"run": "...", "when": "<suite>"}`, run only when
-    that suite has a selection — the JVM run that exists only to trace the selected tests
-    must not boot a Spring context to trace nothing."""
+    that suite has a selection — the run that exists only to trace the selected tests
+    must not start a suite to trace nothing."""
     out = []
     for c in commands or []:
         if isinstance(c, dict):
@@ -1126,18 +1126,21 @@ def lost_vs_committed(kept: list[str]) -> list[dict]:
 SEQ_VERDICT = ART / "sequence.verdict.json"
 
 #: The two outcomes of a traced command besides passing. `NO_TESTS` is not a failure: a
-#: JUnit suite class whose tag filter matched nothing (`-Dgroups=genseq` on a Cucumber
-#: suite with no such scenario) throws NoTestsDiscovered and turns Maven red, and that is a
-#: statement about the filter, not about the code under review.
+#: marker or tag filter that matched nothing (`pytest -m genseq` on a suite with no such
+#: test exits 5, Playwright's `--grep` prints `No tests found` and exits 1) turns the
+#: command red, and that is a statement about the filter, not about the code under review.
 NO_TESTS = "no-tests"
 #: A command that exited 0 on a run that drew no diagram at all. Not `ran`: what the step
 #: is for is the picture, and a zero exit with none is the generator skipping every scenario
 #: (`fetch failed — skipped`) because the traces it reads were never recorded.
 DREW_NOTHING = "drew-nothing"
 _SKIP_LINE = re.compile(r"(?:\"[^\"]*\"|'[^']*')\s*:\s*(?P<why>.*\bskipped\b.*)$", re.I)
-_NO_TESTS_RX = re.compile(r"NoTestsDiscovered|did not discover any tests|No tests to run"
-                          r"|No tests were executed|No tests found", re.I)
-_UNDISCOVERED = re.compile(r"Suite \[([^\]]+)\] did not discover any tests")
+_NO_TESTS_RX = re.compile(r"\bno tests ran\b|No tests found|No test files found"
+                          r"|No tests to run|No tests were executed", re.I)
+#: pytest's own exit code for "collected nothing" (every test deselected included).
+_PYTEST_NO_TESTS = 5
+#: A summary that counts a red test: `1 failed`, `2 errors` (pytest, Playwright, Vitest).
+_RED_RX = re.compile(r"\b[1-9]\d* (?:failed|errors?)\b")
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
@@ -1149,21 +1152,15 @@ def _tail(text: str, n: int = 14) -> list[str]:
 def suite_outcome(code: int, output: str) -> tuple[str, str]:
     """`(RAN | NO_TESTS | FAILED, what to say)` for one traced command.
 
-    NO_TESTS only when every test the runner reports as broken is a suite that discovered
-    nothing (or the runner said it found no test at all): one real failure beside it makes
-    the command FAILED, because a filter that matched nothing must not launder a red test.
+    NO_TESTS only when the runner said it found nothing to run (or pytest exited 5) and
+    counted no red test: one real failure beside it makes the command FAILED, because a
+    filter that matched nothing must not launder a red test.
     """
     if code == 0:
         return RAN, "passed"
-    lines = [_ANSI.sub("", l) for l in output.splitlines()]
-    broken = [i for i, l in enumerate(lines)
-              if re.search(r"<<< (?:FAILURE|ERROR)!", l) and "Tests run:" not in l]
-    empty = sorted(set(_UNDISCOVERED.findall(output)))
-    only_empty = all(any(_NO_TESTS_RX.search(x) for x in lines[i + 1:i + 3]) for i in broken)
-    if _NO_TESTS_RX.search(output) and only_empty:
-        named = ", ".join(s.rsplit(".", 1)[-1] for s in empty)
-        return NO_TESTS, (f"{named} discovered no tests under the tag filter" if named
-                          else "the runner found no test to run")
+    text = _ANSI.sub("", output)
+    if (code == _PYTEST_NO_TESTS or _NO_TESTS_RX.search(text)) and not _RED_RX.search(text):
+        return NO_TESTS, "the runner found no test to run under the filter"
     last = _tail(output, 1)
     return FAILED, last[0].strip()[:240] if last else f"exit {code}"
 
@@ -1372,8 +1369,7 @@ def city_coverage(ctx: Ctx) -> Path | None:
 
 
 def _city(ctx: Ctx):
-    # The CRAP colours still need a JaCoCo report, which nothing here produces any more.
-    # Line and acceptance coverage do not: the test step (`testcov`) already measured both,
+    # Line and acceptance coverage: the test step (`testcov`) already measured both,
     # per test, for the Tests tab, and `city_coverage` hands that to the generator. No test
     # is run from here — the traced browser suite moved to `traces` (see `_city_tests`).
     cov = city_coverage(ctx)
@@ -1527,8 +1523,8 @@ def app_vars(output: str) -> dict[str, str]:
     """`{NAME: value}` off a command that prints `NAME=value` lines (`start-docker.sh ports`).
 
     The base URL is the only address an `up` can be scraped for, and a traced run needs
-    more than one: the backend, the trace store, the collector the JVM under test exports
-    to. All of them are host-picked, so none can be written into the config; a line that
+    more than one: the backend, the trace store, the collector the service under test
+    exports to. All of them are host-picked, so none can be written into the config; a line that
     is not an assignment (a banner, a warning) is ignored rather than guessed at."""
     found = {}
     for line in _ANSI.sub("", output or "").splitlines():
@@ -1851,10 +1847,18 @@ def _api(ctx: Ctx):
         f"--out {ART}/openapi-visual-diff.html",
     ):
         sh(cmd, ctx)
-    if not have("oasdiff"):
-        ctx.notes.append("no oasdiff — the seal reads COMPATIBLE · PARTIAL LIST in amber "
-                         "and the list is a lower bound. That amber is correct; do not "
-                         "'fix' it in the prose")
+
+
+def _api_prereq(c: "Ctx") -> bool | str:
+    """A spec (or `serverless*.yml` to derive one from), and oasdiff, the one differ
+    `openapi-compat.py` has: without it there is no verdict to print, so the step is
+    skipped with the reason instead of failing three commands in."""
+    spec = c.cfg.get("spec", "openapi.yaml")
+    if not (Path(spec).is_file() or has_serverless()):
+        return f"no spec at {spec}, and no serverless*.yml to derive one from"
+    oasdiff = os.environ.get("OASDIFF_BIN", "oasdiff")
+    return have(oasdiff) or (f"{oasdiff} is not installed — the REST contract is diffed by "
+                             "oasdiff alone; install it (docs/ludvig.md) and re-run --only api")
 
 
 def _specchanges(ctx: Ctx):
@@ -1879,136 +1883,6 @@ def _logging(ctx: Ctx):
     base = merge_base(ctx)
     sh(f"{HERE}/logextract.py {' '.join(paths)} --repo . --since {base} "
        f"--json {ART}/logging.json", ctx)
-
-
-# ── which screens did the branch change? ──────────────────────────────────────────
-#
-# The audit's `screens` used to be two entries somebody guessed the branch touched, copied
-# from the example, and the one screen that mattered ("Edit a visit", changed by the
-# branch) was not among them. Nothing looked at the diff. Now `screens` is the whole
-# app's catalogue, the audit draws only the ones whose DOM changed, and the runner does the
-# one check the audit cannot: it reads the diff for changed Angular components, follows
-# them to their routes, and shouts about any route the catalogue does not reach.
-
-ROUTE_TOKEN = re.compile(
-    r"""(?P<open>\{)|(?P<close>\})|(?P<path>\bpath\s*:\s*(['"`])(?P<p>.*?)\4)"""
-    r"""|(?P<comp>\bcomponent\s*:\s*(?P<c>[A-Za-z_]\w*))|(?P<children>\bchildren\s*:)"""
-    r"""|(?P<comment>//[^\n]*|/\*.*?\*/)""", re.S)
-
-
-def angular_routes(text: str) -> list[tuple[str, str]]:
-    """`(route pattern, component class)` pairs out of one routing source, nested children
-    joined onto their parent's path. A stack of open `{`s, not a TypeScript parser: each
-    route object records its own `path:` and `component:`, and a `children:` array under
-    it opens objects whose paths are prefixed with its own. Comments are skipped so a
-    route somebody commented out is not a route."""
-    out, stack = [], []          # one entry per open `{`: {"path", "full", "component"}
-    for m in ROUTE_TOKEN.finditer(text):
-        if m["comment"]:
-            continue
-        if m["open"]:
-            # A child opened under a route inherits that route's full path; an object
-            # opened before its parent's `path:` (or a `resolve: {…}`) inherits the
-            # grandparent's, which is the right answer for both.
-            stack.append({"path": None, "component": None,
-                          "full": stack[-1]["full"] if stack else ""})
-        elif m["close"]:
-            if not stack:
-                continue
-            r = stack.pop()
-            if r["component"] and r["path"] is not None:
-                out.append((r["full"], r["component"]))
-        elif m["path"] is not None and stack:
-            r = stack[-1]
-            r["path"] = m["p"].replace("\\/", "/").strip("/")
-            r["full"] = "/".join(x for x in (r["full"], r["path"]) if x)
-        elif m["comp"] and stack:
-            stack[-1]["component"] = m["c"]
-    return out
-
-
-def route_matches(pattern: str, url: str) -> bool:
-    """`pets/:id/visits/add` reaches `pets/11/visits/add`. A parameter takes one segment; a
-    `**` takes the rest; the catalogue's URL is compared without its origin, query or hash."""
-    path = re.sub(r"^https?://[^/]+", "", url).split("?", 1)[0].split("#", 1)[0].strip("/")
-    rx = "/".join("[^/]+" if seg.startswith(":") else ".*" if seg == "**" else re.escape(seg)
-                  for seg in pattern.strip("/").split("/") if seg)
-    return re.fullmatch(rx, path) is not None
-
-
-def _component_ts(rel: str) -> str | None:
-    """The `.component.ts` behind any file of an Angular component; None for a spec or
-    for a file that is not a component's."""
-    m = re.match(r"(.*\.component)\.(ts|html|scss|css|less)$", rel)
-    if not m or rel.endswith(".spec.ts"):
-        return None
-    return m.group(1) + ".ts"
-
-
-def unlisted_screens(changed: list[str], catalogue: dict, sources: list[str],
-                     root: Path = Path(".")) -> list[dict]:
-    """The changed, routed components no catalogue screen reaches.
-
-    `changed` is the diff's file list; a changed component that owns a route is checked
-    directly, and one that does not (a child like `<app-visit-list>`) is followed one hop
-    to the routed components whose templates embed its selector. Anything further — a
-    pipe, a service, a shared stylesheet — is left to the DOM diff, which sees it on
-    whichever catalogue screen renders it. The result is what the audit prints in red."""
-    roots = [root / s for s in sources] or [root]
-    routes: list[tuple[str, str]] = []
-    for r in roots:
-        for f in r.rglob("*.ts"):
-            if f.name.endswith(".spec.ts") or "node_modules" in f.parts:
-                continue
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            if re.search(r"\bRouter(Module\.for(Root|Child)|Config)\b|:\s*Routes\b", text):
-                routes += angular_routes(text)
-    by_class = {}
-    for pattern, cls in routes:
-        by_class.setdefault(cls, []).append(pattern)
-
-    changed_ts = sorted({t for t in map(_component_ts, changed) if t})
-    candidates: dict[str, str | None] = {}          # class -> via selector, or None
-    templates = None
-    for ts in changed_ts:
-        f = root / ts
-        if not f.is_file():
-            continue
-        text = f.read_text(encoding="utf-8", errors="replace")
-        cls = re.search(r"export\s+class\s+(\w+)", text)
-        if not cls:
-            continue
-        if cls.group(1) in by_class:
-            candidates.setdefault(cls.group(1), None)
-            continue
-        sel = re.search(r"selector\s*:\s*['\"]([^'\"]+)['\"]", text)
-        if not sel:
-            continue
-        if templates is None:
-            templates = [h for r in roots for h in r.rglob("*.component.html")
-                         if "node_modules" not in h.parts]
-        for h in templates:
-            if f"<{sel.group(1)}" not in h.read_text(encoding="utf-8", errors="replace"):
-                continue
-            host = h.parent / (h.name[: -len(".html")] + ".ts")
-            if not host.is_file():
-                continue
-            hc = re.search(r"export\s+class\s+(\w+)",
-                           host.read_text(encoding="utf-8", errors="replace"))
-            if hc and hc.group(1) in by_class:
-                candidates.setdefault(hc.group(1), f"<{sel.group(1)}>")
-
-    urls = list((catalogue or {}).values())
-    out = []
-    for cls, via in candidates.items():
-        for pattern in by_class[cls]:
-            if pattern in ("", "**") or any(route_matches(pattern, u) for u in urls):
-                continue
-            out.append({"component": cls, "route": pattern, **({"via": via} if via else {})})
-    return out
 
 
 @contextlib.contextmanager
@@ -2077,19 +1951,6 @@ def _dsaudit(ctx: Ctx):
                           "guessed the branch touched")
     branch = sh("git rev-parse --abbrev-ref HEAD", ctx, capture=True).stdout.strip() or "HEAD"
     mb = merge_base(ctx)
-    changed = sh(f"git diff --name-only {mb} HEAD -- "
-                 + " ".join(f"'{s}'" for s in (c.get("source") or [])),
-                 ctx, capture=True, check=False).stdout.split()
-    unlisted = unlisted_screens(changed, catalogue, c.get("source") or [])
-    for u in unlisted:
-        ctx.notes.append(f"UNLISTED SCREEN — {u['component']} changed and renders "
-                         f"{u['route']}" + (f" (through {u['via']})" if u.get("via") else "")
-                         + ", which no steps.dsaudit.screens entry reaches: the audit never "
-                         "looked at it. Add the screen to human-review.json and re-run "
-                         "--only dsaudit; until then say so in the guide")
-    flags = " ".join(
-        f'--unlisted "{u["component"]}={u["route"]}' + (f'={u["via"]}' if u.get("via") else "") + '"'
-        for u in unlisted)
     # The audit shoots with Playwright, which the `python3` on PATH may not have (Homebrew's
     # 3.14 shadowed the 3.12 that did on 5 Oct, and the run's agent spent $0.29 finding out).
     python = _playwright_python(ctx)
@@ -2097,7 +1958,7 @@ def _dsaudit(ctx: Ctx):
     with _dsaudit_origins(ctx, c, mb) as (base_new, base_old):
         sh(f"{audit} --base-new {base_new} --base-old {base_old} "
            f'--label-new "{branch}" --label-old {c.get("label-old", "main")} {screens} {sources} '
-           f"{flags} --assets {ART} --asset-prefix assets --json {ART}/ds-audit.json "
+           f"--assets {ART} --asset-prefix assets --json {ART}/ds-audit.json "
            f"-o {ART}/ds-audit.html", ctx)
     # Outside the block: the stylesheet is printed by the script itself and needs no
     # application at all, so it must not hold two stacks up while it is written.
@@ -2247,9 +2108,8 @@ def _traces_locked(ctx: Ctx):
 def _testcov(ctx: Ctx):
     """Which tests execute which changed lines — per test, measured, not paired by a model.
 
-    `testcov.py` runs the JUnit and Karma suites itself, each with a per-test hook this
-    skill ships (a JUnit Platform listener that dumps and resets JaCoCo around every test, a
-    Karma reporter that diffs Istanbul's counters around every spec), and harvests what the
+    `testcov.py` runs the service's pytest suite itself, under coverage.py with per-test
+    contexts, and harvests what the
     browser suites left in `steps.testcov.e2e.dir` when `city.tests` / `traces.commands`
     (both run by `traces`) ran them with COVERAGE_DIR. It never runs the browser suites a second time: they are
     the longest run on the page, and they have already run, traced, for the recordings.
@@ -2330,10 +2190,10 @@ STEP_INPUTS = {
     # The DSL, and the tests the cards quote: which C4 level a test checks is read off its
     # source (`structurizr-views.py` `tests_reading`). Something a DSL `!include`s by a
     # path that does not end in .dsl is rare enough to leave out.
-    "c4":           {"paths": ("*.dsl", "*Test.java", "*Tests.java", "*Test.kt", "*Tests.kt"),
+    "c4":           {"paths": ("*.dsl", "test_*.py", "*_test.py"),
                      "tools": ("structurizr-views.py",),
                      "outputs": ("assets/c4",)},
-    "complexity":   {"paths": ("*.java", "*.py", "serverless*.yml"),
+    "complexity":   {"paths": ("*.py", "serverless*.yml"),
                      "tools": ("endpoint-complexity.py", "endpoint-complexity-delta.py"),
                      "outputs": ("assets/complexity-delta.html",
                                  "assets/complexity-delta.css")},
@@ -2348,7 +2208,7 @@ STEP_INPUTS = {
     "specchanges":  {"paths": ("*.yaml", "*.yml"),
                      "tools": (),
                      "outputs": ("assets/openapi-changes.html",)},
-    "logging":      {"paths": ("*.java", "*.ts", "*.js", "*.kt", "*.py", "*.tsx"),
+    "logging":      {"paths": ("*.ts", "*.js", "*.py", "*.tsx"),
                      "tools": ("logextract.py",),
                      "outputs": ("assets/logging.json",)},
     "owners":       {"paths": ("*",),
@@ -2630,9 +2490,7 @@ STEPS = [
      or "no serverless*.yml at the root — nothing this step knows how to read entry points from",
      _complexity),
     ("api",         "api",           "REST contract diff",
-     lambda c: Path(c.cfg.get("spec", "openapi.yaml")).is_file() or has_serverless()
-     or f"no spec at {c.cfg.get('spec', 'openapi.yaml')}, and no serverless*.yml to derive "
-        "one from", _api),
+     _api_prereq, _api),
     ("specchanges", "api",           "pb33f report",
      lambda c: have("openapi-changes") or "openapi-changes not installed", _specchanges),
     ("logging",     "logging",       "structural logging scan",
@@ -2709,8 +2567,9 @@ def downstream(names: set[str]) -> set[str]:
 #: the one Docker stack of
 #: the commit under review (`petclinic-<sha>`), and the step that started it tears it down
 #: when it ends — under another step still using it. `sequence` and `testcov` both run
-#: `mvn test` in the same module, and two Maven builds in one `target/` corrupt each
-#: other. Everything else reads git and files, and runs alongside anything.
+#: the service's pytest suite, in the same checkout and against the same test database,
+#: and two of those at once trip over each other's rows and `.coverage` files. Everything
+#: else reads git and files, and runs alongside anything.
 #: The lane is also what keeps a capture honest: `video` and `dsaudit` (`CAPTURES`) reset
 #: the database first, and only because they hold `stack` can no writer — the traced
 #: suites — land between that reset and their last screenshot. `city` held it too while it
@@ -2723,8 +2582,8 @@ USES = {
     "traces":   {"stack", "e2e"},      # its browser suites write to that stack's database
     "video":    {"stack"},
     "dsaudit":  {"stack"},
-    "sequence": {"maven", "devports", "e2e"},
-    "testcov":  {"maven"},
+    "sequence": {"pytest", "devports", "e2e"},
+    "testcov":  {"pytest"},
 }
 
 
@@ -2865,7 +2724,7 @@ def run_step(name, tabs, label, prereq, fn, ctx: Ctx,
 def load_config(path: Path) -> dict:
     if not path.is_file():
         print(f"[run-steps] no {path} — every project-specific step will be skipped and "
-              f"named. Copy {HERE.parent}/human-review.example.json to start.",
+              f"named. Copy {HERE.parent}/human-review.ludvig.json to start.",
               file=sys.stderr)
         return {}
     return json.loads(path.read_text(encoding="utf-8"))

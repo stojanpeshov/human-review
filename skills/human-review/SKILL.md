@@ -42,7 +42,7 @@ done
 ```
 
 Run everything from the repository root. Project-specific commands live in
-`human-review.json` there, not in this file — `human-review.example.json` is the template.
+`human-review.json` there, not in this file — `human-review.ludvig.json` is the template.
 
 ## Run it as one program
 
@@ -191,9 +191,8 @@ Read the status table it prints. Three things in it are yours:
   says coverage was not measured; with it, the column lists the tests that *execute* the
   change, measured per test, and the pairing is a 🤖 chip on the rows AI named.
 - **`failed`** — say so in the guide. A failed producer is a fact about the run.
-- **`note`** — things only the run knows: an amber `PARTIAL LIST` seal that is *correct*,
-  a suite that could not start, and above all **video exit 3 — filmed, and the feature did
-  not hold.** Lead the whole review
+- **`note`** — things only the run knows: a suite that could not start, and above all
+  **video exit 3 — filmed, and the feature did not hold.** Lead the whole review
   with that one. You no longer have to *notice* it to keep it: the step writes
   `assets/feature.run.log` every time and `assets/feature.verdict.json` on any non-zero
   exit, and the page draws that verdict as a red band over the player. Say it in the prose
@@ -208,12 +207,6 @@ Read the status table it prints. Three things in it are yours:
   `$HUMAN_REVIEW_APP_COMMIT_URL`) and refuses to film a different one. An application that
   cannot say only warns — but if you see that warning, check by hand which tree is up
   before you believe a frame of it.
-- **`UNLISTED SCREEN`** (a `dsaudit` note) — the branch changed a routed component that no
-  entry in `steps.dsaudit.screens` reaches, so the design-system audit never looked at
-  the one screen the change was about. That is a hole in the evidence, not a finding to
-  narrate around: add the screen to `human-review.json` (the list is the app's whole
-  catalogue; only the screens whose DOM changed are drawn) and re-run `--only dsaudit`
-  before writing the guide. The page prints the same warning in red at the top of UX.
 
 ## Step 4 — Write the layout, the ledes, and the matrix
 

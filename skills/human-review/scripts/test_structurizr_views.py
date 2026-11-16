@@ -52,9 +52,18 @@ def test_a_new_arrow_changes_the_view():
     assert a["C3"]["sig"] != b["C3"]["sig"]
 
 
+def test_a_python_test_is_read_for_the_level_and_the_arrows_it_checks():
+    text = ("for c in ws.model.get_software_system_with_name('x').containers:\n"
+            "    assert isinstance(c, Component) and c.get_efferent_relationships()\n")
+    assert [lvl for lvl, rx in sv.LEVEL_PROBES.items() if rx.search(text)] == \
+        ["Component", "Container"]
+    assert sv.RELATIONSHIP_PROBE.search(text)
+    assert not sv.RELATIONSHIP_PROBE.search("ws.model.components")
+
+
 def test_the_note_says_which_level_a_test_checks():
-    tests = [{"path": "src/test/C3ArchTest.java", "levels": ["Component"], "arrows": True}]
-    assert "and their arrows are checked against the code by C3ArchTest.java" \
+    tests = [{"path": "tests/test_c3.py", "levels": ["Component"], "arrows": True}]
+    assert "and their arrows are checked against the code by test_c3.py" \
         in sv.tested_note("Component", tests)
     boxes = [dict(tests[0], arrows=False)]
     assert sv.tested_note("Component", boxes).endswith("its arrows are not."), \
@@ -185,18 +194,18 @@ def test_a_view_is_found_at_its_definition_line_through_includes(tmp_path):
         "an element named like a key is not a view"
 
 
-def test_the_header_names_a_view_and_its_archunit_test_and_opens_the_dsl_at_it(tmp_path):
+def test_the_header_names_a_view_and_its_test_and_opens_the_dsl_at_it(tmp_path):
     import subprocess
     _workspace(tmp_path)
-    test = tmp_path / "src" / "test" / "C3ArchTest.java"
+    test = tmp_path / "tests" / "test_c3.py"
     test.parent.mkdir(parents=True)
-    test.write_text("import com.tngtech.archunit.core.domain.JavaClass;\n", encoding="utf-8")
+    test.write_text('WORKSPACE = "docs/w.dsl"\n', encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     assets = tmp_path / "assets" / "c4"
     assets.mkdir(parents=True)
     _svg(assets, "C3.new.light.svg", "#fff")
-    note = sv.tested_note("Component", [{"path": "src/test/C3ArchTest.java",
+    note = sv.tested_note("Component", [{"path": "tests/test_c3.py",
                                          "levels": ["Component"], "arrows": True}])
     _manifest(assets, [{"name": "C3-Repository", "type": "Component", "status": "unchanged",
                         "description": "Repository Layer — nearest neighbours",
@@ -208,7 +217,7 @@ def test_the_header_names_a_view_and_its_archunit_test_and_opens_the_dsl_at_it(t
     assert "nearest neighbours</span>" not in head, "the description is a tooltip now"
     # The credential badge after the status: the test is where a click goes, its sentence
     # the hover.
-    assert '>ArchUnit-tested vs code</a>' in head and 'C3ArchTest.java:1:1"' in head
+    assert '>Tested vs code</a>' in head and 'test_c3.py:1:1"' in head
     assert head.index("unchanged</span>") < head.index('class="dgm-prov"')
     assert f'w.dsl:6:1"' in head, "the file link opens the DSL at the view's line"
     assert ">w.dsl</a>" in head and ":6" not in re.sub(r'"[^"]*"', '""', head), \
@@ -219,7 +228,7 @@ def test_the_header_names_a_view_and_its_archunit_test_and_opens_the_dsl_at_it(t
 
 def test_a_hand_maintained_note_is_an_amber_badge_with_the_sentence_on_hover(tmp_path):
     """Victor, 20 Oct 2026: the paragraph under the card becomes two words in the header,
-    the same slot as `ArchUnit-tested vs code`, warning-coloured; the sentence is the tip."""
+    the same slot as `Tested vs code`, warning-coloured; the sentence is the tip."""
     from hrbuild.shared.c4 import _checked_label
     label, rest = _checked_label("Hand-maintained: no test reads this workspace.", tmp_path)
     assert rest == "" and 'class="dgm-prov warn"' in label and ">Hand-maintained</span>" in label
@@ -227,6 +236,6 @@ def test_a_hand_maintained_note_is_an_amber_badge_with_the_sentence_on_hover(tmp
     label, rest = _checked_label("Some other note.", tmp_path)
     assert (label, rest) == ("", "Some other note.")
     label, rest = _checked_label(sv.tested_note("Component", [
-        {"path": "T.java", "levels": ["Component"], "arrows": False}]) + " Not compared.",
+        {"path": "test_t.py", "levels": ["Component"], "arrows": False}]) + " Not compared.",
         tmp_path)
     assert ">Tested vs code</span>" in label and rest == "Not compared."

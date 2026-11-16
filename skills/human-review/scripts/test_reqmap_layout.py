@@ -201,16 +201,6 @@ def test_a_row_names_its_kind_by_colour_not_by_a_badge():
     assert ".reqmap .rm-chh .rm-cat{" in css
 
 
-def test_the_fixture_dot_slides_into_the_file_columns_blank():
-    """Victor, 19 Oct 2026: the DB-fixture dot further right, to leave the name more room -
-    into the blank a `.java` link leaves in its `.feature`-wide column, never over a longer
-    file name the clash rule wrote there."""
-    css, js = T.REQMAP_CSS, T.REQMAP_CHAPTERS_JS
-    assert ('.reqmap .rm-thead > .fx-dot:has(+ .rm-tw[data-face=".java"]:not([data-clash])){'
-            '\n  margin-right:-21px;') in css
-    assert "if (clash) tw.dataset.clash = 'yes'; else delete tw.dataset.clash;" in js
-
-
 def test_the_title_row_carries_the_grand_total():
     """Victor, 19 Oct 2026: the masthead's `tests +20` was the chapters' `+11` and `+9`
     and nothing added them up. The title row ends in the chapters' four columns, summed."""

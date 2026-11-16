@@ -148,19 +148,19 @@ METHOD = re.compile(
     r"synchronized|override|readonly|get|set)\s+)*"
     r"(?:<[^<>]+>\s*)?"
     r"(?:[\w.$]+(?:<[^;]*?>)?(?:\[\])?\s+)?"
-    r"([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::[^{;]+)?(?:throws\s[\w\s,.]+)?\{\s*$")
+    r"([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::[^{;]+)?\{\s*$")
 PY_DEF = re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(")
 
 # Two characters is not a name a reader loses the thread of, and `id`, `of` and `to` turn
 # up inside enough identifiers-that-are-not-calls to be pure noise.
 MIN_NAME = 3
 
-BRACE_LANGS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".java", ".kt", ".cs", ".go"}
+BRACE_LANGS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cs", ".go"}
 
 # Which suffixes are the same language for the purpose of resolving a name. Nothing on this
 # page calls across one of these boundaries, and a name that appears on both sides of one is
-# a coincidence: the TypeScript glue's local `bookVisit` helper resolved to a `private int
-# bookVisit(VisitDto)` quoted from a Spring controller three tabs away, and the link read
+# a coincidence: the TypeScript glue's local `bookVisit` helper resolved to a backend
+# method of the same name quoted three tabs away, and the link read
 # exactly like the true ones beside it. A missed link costs the reader a search they were
 # already going to do; a confident wrong one costs them the wrong answer.
 FAMILY = {".ts": "js", ".tsx": "js", ".js": "js", ".jsx": "js", ".mjs": "js"}
@@ -194,16 +194,13 @@ def defined_names(suffix: str, lines: list[str]) -> dict[str, int]:
 
 
 # --- what a window binds a Gherkin sentence to -----------------------------------------
-# Both dialects this pipeline meets: cucumber-js, where the pattern is the first argument
-# of `When(...)`, and cucumber-jvm, where it is the argument of an `@When` annotation on
-# the method below it. The keyword itself is not part of the match — Cucumber binds a step
-# by its text alone, so a `Then` written as an `And` still finds its definition.
+# cucumber-js, where the pattern is the first argument of `When(...)`. The keyword itself
+# is not part of the match — Cucumber binds a step by its text alone, so a `Then` written
+# as an `And` still finds its definition.
 JS_STEP = re.compile(
     r"^\s*(?:Given|When|Then|And|But)\s*\(\s*"
     r"(?:(?P<q>['\"])(?P<text>(?:\\.|(?!(?P=q)).)*)(?P=q)"
     r"|/(?P<rx>(?:\\.|[^/])+)/)")
-JAVA_STEP = re.compile(
-    r"^\s*@(?:Given|When|Then|And|But)\s*\(\s*\"(?P<text>(?:\\.|[^\"])*)\"\s*\)")
 
 # `{string}` is quoted in the scenario and the quotes belong to the argument, which is why
 # the sentence a reader sees carries them and the pattern does not.
@@ -258,10 +255,7 @@ def defined_steps(suffix: str, lines: list[str]) -> list[tuple[re.Pattern, int]]
     """`[(pattern, 1-based index within `lines`)]` for the step definitions in a window."""
     out = []
     for i, text in enumerate(lines, 1):
-        if suffix == ".java":
-            m = JAVA_STEP.match(text)
-            pattern = step_pattern(_unescape_source_string(m["text"]), False) if m else None
-        elif suffix in (".ts", ".js", ".tsx", ".jsx", ".mjs"):
+        if suffix in (".ts", ".js", ".tsx", ".jsx", ".mjs"):
             m = JS_STEP.match(text)
             if not m:
                 pattern = None

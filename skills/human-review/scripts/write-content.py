@@ -112,8 +112,8 @@ def layout_source(review: Path, root: Path) -> tuple[dict, str]:
 
 def prune(spec: dict, root: Path) -> list[str]:
     """Drop, in place, every block that names a file this repository does not have — the
-    example is petclinic's, and a `Java packages` diagram on a Go project is a hole the build
-    would render as a card of nothing. Returns what it dropped, for the log."""
+    example is another project's, and a diagram it names that this repository lacks is a
+    hole the build would render as a card of nothing. Returns what it dropped, for the log."""
     dropped = []
     for tab in spec.get("tabs") or []:
         kept = []

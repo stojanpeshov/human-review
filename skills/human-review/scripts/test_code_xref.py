@@ -63,8 +63,6 @@ def test_the_shapes_a_definition_really_takes():
     ]
     assert set(xref.defined_names(".ts", ts)) == {
         "open_owner_detail_page", "bookTheVisit", "helperMethod"}
-    assert xref.defined_names(".java", [
-        "  private VisitDto callGet(int visitId) throws Exception {"]) == {"callGet": 1}
     assert xref.defined_names(".py", ["async def fetch_owner(client):"]) == {"fetch_owner": 1}
 
 
@@ -85,7 +83,7 @@ def test_a_cucumber_step_is_not_a_method_called_when():
 
 def test_a_call_is_not_a_declaration():
     assert xref.defined_names(".ts", ["  await bookVisit(this, vetName);"]) == {}
-    assert xref.defined_names(".java", ["    if (visit.getVet() != null) {"]) == {}
+    assert xref.defined_names(".ts", ["    if (visit.vet != null) {"]) == {}
 
 
 # --- what a scenario sentence binds to -------------------------------------------------
@@ -102,11 +100,11 @@ def test_a_pattern_that_will_not_compile_costs_the_link_and_not_the_build():
     assert xref.step_pattern("(unclosed", True) is None
 
 
-def test_step_definitions_in_both_dialects_and_through_the_source_escape():
+def test_step_definitions_read_through_the_source_escape():
     js = ["Then('that pet\\'s history shows the visit', async function () {"]
     (pattern, line), = xref.defined_steps(".ts", js)
     assert line == 1 and pattern.match("that pet's history shows the visit")
-    (pattern, line), = xref.defined_steps(".java", ['  @When("the receptionist books {string}")'])
+    (pattern, line), = xref.defined_steps(".ts", ['When("the receptionist books {string}", () => {'])
     assert pattern.match('the receptionist books "a visit"')
 
 
@@ -153,13 +151,13 @@ def test_a_name_nothing_on_the_page_defines_stays_plain_text():
 
 
 def test_a_name_does_not_resolve_across_languages():
-    """`bookVisit` is a local helper in the TypeScript glue and a `private int
-    bookVisit(VisitDto)` in a Spring controller quoted three tabs away. The glue's call
-    linked to the controller, and the link read exactly like the true ones beside it."""
+    """`bookVisit` is a local helper in the TypeScript glue and a backend function of the
+    same name quoted three tabs away. The glue's call linked to the backend, and the link
+    read exactly like the true ones beside it."""
     doc = xref.cross_link(page(
         figure("vscode://file//r/glue.ts:78:1", 78, ["    await bookVisit(this, vetName);"]),
-        figure("vscode://file//r/VisitRestController.java:81:1", 81,
-               ["    private int bookVisit(VisitDto visitDto) {", "    }"])))
+        figure("vscode://file//r/handler.py:81:1", 81,
+               ["def bookVisit(visit_dto):", "    pass"])))
     assert "xref" not in doc
 
 
@@ -213,7 +211,7 @@ def test_the_map_s_own_excerpts_are_linked_and_the_ones_pointed_at_are_folded():
 
 
 def test_a_collapsed_part_previews_the_first_real_code_line_not_a_doc_comment():
-    """A slice that opens on a `/**` javadoc header used to fold to that line verbatim,
+    """A slice that opens on a `/**` JSDoc header used to fold to that line verbatim,
     which says nothing about which test it is. Both the part's own `preview` field and the
     fold index's `face` skip the blank/comment lines the same way `preview_line` does for
     the page's own snippet stub."""

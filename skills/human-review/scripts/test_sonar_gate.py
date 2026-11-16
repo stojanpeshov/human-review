@@ -97,15 +97,11 @@ def test_a_pull_request_run_links_the_pull_requests_analysis(project):
                         "&pullRequest=37")
 
 
-def test_the_key_comes_from_the_pom_or_the_workflow_when_there_is_no_properties_file(tmp_path):
-    (tmp_path / "pom.xml").write_text(
-        "<project><properties><sonar.projectKey>acme_shop</sonar.projectKey>"
-        "</properties></project>")
-    assert preflight.sonar_project(tmp_path) == ("acme_shop", "https://sonarcloud.io")
-    (tmp_path / "pom.xml").unlink()
+def test_the_key_comes_from_the_workflow_when_there_is_no_properties_file(tmp_path):
+    assert preflight.sonar_project(tmp_path) == (None, "https://sonarcloud.io")
     wf = tmp_path / ".github" / "workflows"
     wf.mkdir(parents=True)
-    (wf / "ci.yml").write_text("run: mvn verify sonar:sonar -Dsonar.projectKey=acme_cart\n")
+    (wf / "ci.yml").write_text("run: sonar-scanner -Dsonar.projectKey=acme_cart\n")
     assert preflight.sonar_project(tmp_path)[0] == "acme_cart"
 
 

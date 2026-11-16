@@ -5,6 +5,8 @@ AWS Lambda (Serverless Framework v3), SQLAlchemy + Alembic, pytest, aws-lambda-p
 CircleCI and GitHub — and the React/Vite front end of mitt-ludvig. Pages are built and read
 locally; nothing is published.
 
+What is done and what is left: [`ludvig-progress.md`](ludvig-progress.md).
+
 ## What each tab shows on a Ludvig repository
 
 | Tab | Source | Needs |

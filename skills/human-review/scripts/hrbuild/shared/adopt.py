@@ -199,7 +199,7 @@ EXPLAIN: dict[str, dict[str, object]] = {
             'Check it does what the ticket asked.',
             'Click a transcript line to jump there.',
             '<b>Running app</b>: this build in Docker, to try yourself; Start says which step it is on.',
-            '<b>Running DB</b>: its JDBC URL, login included; a click opens it in IntelliJ.',
+            '<b>Running DB</b>: its JDBC URL, login included, to paste into a database client.',
         ],
     },
     'api': {
@@ -338,14 +338,14 @@ EXPLAIN: dict[str, dict[str, object]] = {
     },
     'dsaudit': {
         "li": [
-            'Every screen, main vs this branch on the same data: a pixel-level visual diff.',
-            "A script flags controls that aren't from the app's own components.",
-            'Open the changed screens: is each change wanted?',
+            'Every route of the app, base vs this branch on mocked data, compared DOM first.',
+            'Fluent UI v9, mitt-ludvig-ui, src/components are the design system; the rest is a gap.',
             '✅ judged fine · ⚠️ a gap · ⚪ changed, but no control to judge.',
-            'Hover a red box: the tag found, struck, against the tag it should be.',
-            'Browser logos (title: all, bar: one screen): each picture as it drew it.',
+            'Hover a red box: the tag found, struck, against the component it should be.',
+            'A route with a :param is shot only once steps.dsaudit.screens gives it a value.',
+            'Open the changed screens: is each change wanted?',
         ],
-        "ex": 'e.g. a home-made combo box, or an inline <code>style=</code>.',
+        "ex": 'e.g. a <code>&lt;Form.Select&gt;</code> where Fluent’s <code>&lt;Dropdown&gt;</code> belongs.',
     },
     'complexity': {
         "move": 'p.cx-lede',

@@ -87,10 +87,6 @@ def open_url(url: str) -> bool:
     return True
 
 
-#: The application `open -a` starts for each editor, on macOS.
-MAC_APP = {"vscode": "Visual Studio Code", "idea": "IntelliJ IDEA"}
-
-
 def code_cli() -> str | None:
     """The `code` launcher. On WSL it is VS Code's own shim, which opens a WSL remote
     window on a WSL folder; on macOS it is often missing from a GUI-launched PATH."""
@@ -101,13 +97,13 @@ def code_cli() -> str | None:
     return str(mac) if mac.is_file() else None
 
 
-def launch_editor(folder, app: str = "vscode") -> None:
-    """Open `folder` as a project in the editor, in the running instance where possible."""
+def launch_editor(folder) -> None:
+    """Open `folder` in VS Code, in the running instance where possible."""
     if kind() == "mac":
-        subprocess.Popen(["open", "-a", MAC_APP.get(app, app), str(folder)],
+        subprocess.Popen(["open", "-a", "Visual Studio Code", str(folder)],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
-    cli = code_cli() if app == "vscode" else shutil.which("idea")
+    cli = code_cli()
     if cli:
         subprocess.Popen([cli, str(folder)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

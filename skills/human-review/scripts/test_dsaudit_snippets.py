@@ -156,17 +156,17 @@ def test_a_component_used_nowhere_else_is_named_without_a_count():
 
 
 def test_a_kit_control_and_an_outside_one_get_their_own_sentence():
-    kit = {"verdict": "bare", "element": {"tag": "mat-select", "kit": "mat-select"},
+    kit = {"verdict": "bare", "element": {"tag": "select", "kit": "form-select"},
            "expected_ds": ["combo"]}
     assert ds.rule_html(kit, _registry(), "s").startswith(
-        "An Angular Material select (<code>&lt;mat-select&gt;</code>) where the design "
-        "system offers <code>&lt;app-combo&gt;</code>")
+        "A react-bootstrap select (<code>&lt;select class=&quot;form-select&quot;&gt;</code>)"
+        " where the design system offers <code>&lt;app-combo&gt;</code>")
     foreign = {"verdict": "foreign", "role": "paginator",
-               "element": {"tag": "mat-paginator", "kit": "mat-paginator"}}
+               "element": {"tag": "ul", "kit": "pagination"}}
     rule = ds.rule_html(foreign, _registry(), "s")
     # 99db1e5: the fact, no advice paragraph.
-    assert rule == ("An Angular Material paginator (<code>&lt;mat-paginator&gt;</code>); "
-                    "the design system has no <code>paginator</code> component.")
+    assert rule == ("A react-bootstrap pagination (<code>&lt;ul class=&quot;pagination&quot;"
+                    "&gt;</code>); the design system has no <code>paginator</code> component.")
 
 
 def test_the_registry_knows_the_tag_a_template_writes_for_each_component():

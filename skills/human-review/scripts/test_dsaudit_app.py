@@ -110,7 +110,7 @@ UP_OLD = (f"up --ref {BASE_SHA}", 0, "🐳 building\n   http://localhost:63999\n
 
 def _ctx(tmp_path, monkeypatch, app=APP, recorder=None, cfg_extra=None):
     """A run directory, a `dsaudit` block with (or without) an `app`, and a faked shell."""
-    (tmp_path / ".human-review" / "assets").mkdir(parents=True)
+    (tmp_path / ".human-review" / "assets").mkdir(parents=True, exist_ok=True)
     monkeypatch.chdir(tmp_path)
     sh = recorder or Recorder([UP_NEW, UP_OLD, *GIT])
     monkeypatch.setattr(steps, "sh", sh)
@@ -273,3 +273,79 @@ def test_the_prerequisite_still_guards_the_projects_that_serve_their_own(monkeyp
     assert "4301" in reason and "4300" not in reason
     # And it names the way out that did not exist before: the step can start them itself.
     assert "steps.dsaudit.app" in reason
+
+
+# ── the catalogue: the app's React Router routes, with steps.dsaudit.screens over them ──
+
+ROUTES_TSX = '''import { HomePage } from "@/views/home";
+import CustomerPage from "@/views/customer";
+export const AppRouteHelper = {
+  getHome: () => "/home",
+  getCustomer: (customerId = ":customerId") => `/customers/${customerId}`,
+  getSettings: (customerId = ":customerId") => `/customers/${customerId}/settings`,
+};
+const routes: RouteConfig[] = [
+  { path: AppRouteHelper.getHome(), element: <HomePage />, subRoutes: [] },
+  { path: AppRouteHelper.getCustomer(), element: <CustomerPage />, subRoutes: [] },
+  { path: AppRouteHelper.getSettings(), element: <Settings />, subRoutes: [] },
+  { path: "*", element: <p>No such route!</p>, subRoutes: [] },
+];
+export default routes;
+'''
+
+
+def _react_app(tmp_path):
+    src = tmp_path / "frontend" / "src"
+    (src / "views" / "customer").mkdir(parents=True)
+    (src / "routes.tsx").write_text(ROUTES_TSX)
+    (src / "views" / "customer" / "index.tsx").write_text("x\n")
+
+
+def test_the_screens_are_the_apps_routes_with_the_configured_values_over_them(
+        tmp_path, monkeypatch):
+    """No `screens` list to keep in step with the app: the routes are read off
+    `frontend/src/routes.tsx`. A static route is a screen; a `:param` route is shot once
+    `screens` gives it a value, and until then named — in red when the branch changed the
+    component it renders, else in the quiet "not visited" line."""
+    _react_app(tmp_path)
+    changed = ("git diff --name-only", 0, "frontend/src/views/customer/index.tsx\n")
+    sh = Recorder([UP_NEW, UP_OLD, changed, *GIT])
+    ctx, sh = _ctx(tmp_path, monkeypatch, recorder=sh, cfg_extra={
+        "screens": {"fluent demo": None},
+        "ds-hosts": {"Button": "button[data-testid=button]"}})
+    steps._dsaudit(ctx)
+    audit = sh.first("ds-audit.py --base-new")
+    assert "--screen home=home" in audit
+    assert "--unlisted CustomerPage=/customers/:customerId=frontend/src/views/customer/" \
+           "index.tsx" in audit
+    assert "--not-visited /customers/:customerId/settings=Settings" in audit
+    assert "--ds-host 'Button=button[data-testid=button]'" in audit
+
+    ctx, sh = _ctx(tmp_path, monkeypatch, cfg_extra={
+        "screens": {"Customer": "customers/1001"}})
+    steps._dsaudit(ctx)
+    audit = sh.first("ds-audit.py --base-new")
+    assert "--screen Customer=customers/1001" in audit
+    assert "--unlisted" not in audit and "customers/:customerId " not in audit
+
+
+def test_without_a_route_module_the_screens_are_the_whole_catalogue(tmp_path, monkeypatch):
+    ctx, sh = _ctx(tmp_path, monkeypatch, cfg_extra={"routes": False})
+    steps._dsaudit(ctx)
+    audit = sh.first("ds-audit.py --base-new")
+    assert "--screen 'Book a visit=pets/11/visits/add'" in audit
+    assert "--not-visited" not in audit
+
+
+def test_an_app_block_can_call_a_helper_shipped_with_the_skill(tmp_path, monkeypatch):
+    """`{scripts}` is this folder: `vite-app.py` is called from a `human-review.json` that
+    cannot know where the skill is installed."""
+    app = {"up": "python3 {scripts}/vite-app.py up {sha}",
+           "down": "python3 {scripts}/vite-app.py down {sha}"}
+    up_new = (f"vite-app.py up {HEAD_SHA}", 0, "http://127.0.0.1:5301\n")
+    up_old = (f"vite-app.py up {BASE_SHA}", 0, "http://127.0.0.1:5302\n")
+    ctx, sh = _ctx(tmp_path, monkeypatch, app=app, recorder=Recorder([up_new, up_old, *GIT]))
+    steps._dsaudit(ctx)
+    assert sh.first("vite-app.py up") == f"python3 {HERE}/vite-app.py up {HEAD_SHA}"
+    audit = sh.first("ds-audit.py --base-new")
+    assert "--base-new http://127.0.0.1:5301 --base-old http://127.0.0.1:5302" in audit

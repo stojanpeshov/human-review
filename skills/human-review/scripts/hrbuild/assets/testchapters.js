@@ -448,8 +448,8 @@
   // ---- the `−N`: which tests the branch deleted, and where they went -----------------------
   // Locally each name opens its file in the IDE as a diff, the base commit on the left, the
   // caret where the removal landed (semcov.py `deleted_ide`): the test is the red block in
-  // front of the reader. Through editor.js, as every diff handle on the page, so VS Code,
-  // IntelliJ, served or off disk all take the route they take for any other diff. Online,
+  // front of the reader. Through editor.js, as every diff handle on the page, so served
+  // or off disk they take the route they take for any other diff. Online,
   // or where the file itself is gone, the name opens the test as it was on GitHub.
   function online() { return document.documentElement.classList.contains('hr-online'); }
   function goneRows(cat) {

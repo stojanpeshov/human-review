@@ -42,7 +42,7 @@
     parts.forEach(function (part) {
       if (part.dataset.xrefId) return;
       // Keyed by the link's `vscode://file/` address, which editor.js keeps in `data-hr-code`
-      // once the href names IntelliJ instead.
+      // once the href names GitHub instead.
       var link = part.querySelector('a.srcref:not(.rm-diff)[href^="vscode:"], a.srcref:not(.rm-diff)[data-hr-code]');
       var seen = link && INDEX[link.getAttribute('data-hr-code') || link.getAttribute('href')];
       if (!seen) { part.dataset.xrefId = ''; return; }

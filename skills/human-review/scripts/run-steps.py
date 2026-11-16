@@ -1479,10 +1479,14 @@ def _app_slots(ctx: Ctx, ref: str = "HEAD") -> dict:
     length is `core.abbrev` — `auto` by default, which grows with the repository. This one
     is at eight today; a hardcoded seven would have `down` naming an instance that does
     not exist, and `down` failing is a whole stack left running after every film.
+
+    `{scripts}` is this skill's scripts folder, so a block copied into a project's
+    `human-review.json` can call a helper shipped here (`{scripts}/vite-app.py up {sha}`)
+    without knowing where the skill is installed.
     """
     full = sh(f"git rev-parse {ref}", ctx, capture=True, check=False).stdout.strip()
     short = sh(f"git rev-parse --short {ref}", ctx, capture=True, check=False).stdout.strip()
-    return {"sha": full, "shortsha": short or full[:8]}
+    return {"sha": full, "shortsha": short or full[:8], "scripts": str(HERE)}
 
 
 #: What an `app` block exports by default. `video` has always set both, and the same two
@@ -1938,26 +1942,74 @@ def _dsaudit_origins(ctx: Ctx, c: dict, mb: str):
         yield fresh.base, before.base
 
 
+def _react_routes():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("react_routes", str(HERE / "react_routes.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def dsaudit_catalogue(ctx: Ctx, c: dict, mb: str) -> tuple[dict, list[str]]:
+    """The screens the audit shoots — `{name: path}` — and the `ds-audit.py` flags that
+    say what it could not reach.
+
+    The catalogue is the app's routes, read off its React Router modules
+    (`react_routes.py`, from `steps.dsaudit.routes` or `frontend/src/routes.tsx`), with
+    `steps.dsaudit.screens` laid over them: a value there names a screen and fills the
+    route with `:param`s it matches; `null` drops one. A route with a parameter and no
+    value is not visited: `--unlisted` (red) when this branch changed the component it
+    renders, `--not-visited` (one quiet line) otherwise. `"routes": false`, or an app
+    with no route module, leaves `screens` the whole catalogue, as it always was."""
+    overrides = c.get("screens") or {}
+    rr = _react_routes()
+    entry = None if c.get("routes") is False else rr.find_entry(
+        Path.cwd(), c.get("routes") if isinstance(c.get("routes"), str) else None)
+    if entry is None:
+        return {k: v for k, v in overrides.items() if v}, []
+    screens, unvisited = rr.plan_screens(rr.discover(entry), overrides)
+    changed = set(sh(f"git diff --name-only {mb} HEAD", ctx, capture=True,
+                     check=False).stdout.split())
+    flags = []
+    for u in unvisited:
+        if u.get("file") and u["file"] in changed:
+            flags.append("--unlisted " + shlex.quote(
+                f'{u.get("component") or "?"}={u["route"]}={u["file"]}'))
+        else:
+            flags.append("--not-visited " + shlex.quote(
+                f'{u["route"]}={u.get("component") or ""}'))
+    print(f"    {len(screens)} screen(s) from {entry.relative_to(Path.cwd())}"
+          f"{f', {len(unvisited)} route(s) not visited' if unvisited else ''}", flush=True)
+    return screens, flags
+
+
 def _dsaudit(ctx: Ctx):
     c = ctx.step_cfg("dsaudit")
-    catalogue = c.get("screens") or {}
-    screens = " ".join(f'--screen "{k}={v}"' for k, v in catalogue.items())
+    mb = merge_base(ctx)
+    catalogue, unreached = dsaudit_catalogue(ctx, c, mb)
+    screens = " ".join("--screen " + shlex.quote(f"{k}={v}") for k, v in catalogue.items())
     sources = " ".join(f"--source {s}" for s in (c.get("source") or []))
+    # The project's own design-system wrappers, by selector (Fluent is recognised by its
+    # classes without them).
+    hosts = " ".join("--ds-host " + shlex.quote(f"{k}={v}")
+                     for k, v in (c.get("ds-hosts") or {}).items())
     # Asked before anything is started. Booting two stacks to then discover there is
     # nothing to shoot is four minutes spent on a step that was never going to run.
     if not screens:
-        raise LookupError("dsaudit needs at least one screen in steps.dsaudit.screens — "
-                          "the list is the app's whole catalogue, not the screens somebody "
-                          "guessed the branch touched")
+        raise LookupError("dsaudit found no screen: no route module to read (steps.dsaudit."
+                          "routes) and nothing in steps.dsaudit.screens — the list is the "
+                          "app's whole catalogue, not the screens somebody guessed the "
+                          "branch touched")
     branch = sh("git rev-parse --abbrev-ref HEAD", ctx, capture=True).stdout.strip() or "HEAD"
-    mb = merge_base(ctx)
     # The audit shoots with Playwright, which the `python3` on PATH may not have (Homebrew's
     # 3.14 shadowed the 3.12 that did on 5 Oct, and the run's agent spent $0.29 finding out).
     python = _playwright_python(ctx)
     audit = f"{shlex.quote(python[0])} {HERE}/ds-audit.py" if python else f"{HERE}/ds-audit.py"
+    extra = " ".join(shlex.quote(a) for a in (c.get("args") or []))
     with _dsaudit_origins(ctx, c, mb) as (base_new, base_old):
         sh(f"{audit} --base-new {base_new} --base-old {base_old} "
            f'--label-new "{branch}" --label-old {c.get("label-old", "main")} {screens} {sources} '
+           f"{hosts} {' '.join(unreached)} {extra} "
            f"--assets {ART} --asset-prefix assets --json {ART}/ds-audit.json "
            f"-o {ART}/ds-audit.html", ctx)
     # Outside the block: the stylesheet is printed by the script itself and needs no

@@ -81,7 +81,31 @@ before it (`test_no_page_hscroll` masthead ×4, `test_title_icons_centred` ×2).
 
 Suite: all green except the two `test_title_icons_centred` checks (see below).
 
+### UX tab on mitt-ludvig (16 Nov 2026)
+
+- **The design system is Fluent UI v9, mitt-ludvig-ui and `src/components`.** A Fluent control
+  is known by its `fui-<Component>` root class (`FLUENT_CONTROLS`, the roles each covers); a
+  wrapper by the selector in `steps.dsaudit.ds-hosts`; `data-ds` stays the generic hook.
+  The Angular/PrimeNG/ng-zorro catalogue is replaced by react-bootstrap's classes and
+  react-select (`KIT_CONTROLS`); `<button>` is judged too (`ds-audit.py`).
+- **Screens come from React Router.** `react_routes.py` parses `frontend/src/routes.tsx` and
+  the sub-route modules it imports (helper objects, defaulted `:param`s, nested arrays).
+  `steps.dsaudit.screens` gives a `:param` route its value or drops a route; one without a
+  value is "not visited", in red when the branch changed its component (`--unlisted`).
+  A screen that does not load on both sides is skipped and named, not fatal.
+- **Two Vite dev servers**, one per commit, with API and login mocked (`vite-app.py`,
+  `{scripts}` in an `app` block). Config: `human-review.ludvig.json`.
+- **Tried on a scratch clone** (12 static routes): Fluent recognised throughout; the branch's
+  `.btn`, bare `<select>` and `.form-select` flagged, its Fluent Dropdown green; two
+  pre-existing react-bootstrap buttons on the base. It needed a stub for the private
+  mitt-ludvig-ui and a patch so mocked login reaches the app (see `ludvig.md`).
+
 ## Left to do
+
+- **UX on mitt-ludvig:** mitt-ludvig's `AppBrowser.tsx` redirects to Microsoft login even with
+  `VITE_USE_MOCK_AUTH`; it must render `<App />` when `isMockAuth()` before the tab can run
+  for real. `/assignments`, `/manage-customers/list-of-customers` and `/fluentui` did not
+  render under mocks. Param routes need values in `steps.dsaudit.screens`.
 
 - **Two icon-centring tests fail on Linux.** `test_title_icons_centred` holds the rerun
   rings and the voice pills within 0.5px of the title's capitals. The nudges are tuned to
@@ -91,11 +115,11 @@ Suite: all green except the two `test_title_icons_centred` checks (see below).
   - Code City (`regenerate-codecity.sh`, `city-coverage.py`) is a JaCoCo-based tool.
   - Demo film scripts (`record-feature-video.sh`: Spring `/actuator/info`, Angular router)
     and the Running-app/JDBC wording in `shared/commands.py`.
-  - The UX audit's UI-kit catalogue still lists Angular Material/PrimeNG (inert on React).
   - The film step's `steps.video.app.reset` (resets the stack before recording).
 
   Each is reworked or dropped when its tab is picked up.
-- **Postponed:** IntelliJ plugin, Code City, Demo film, UX audit.
+- **Dropped:** the IntelliJ plugin and IntelliJ as an IDE target; VS Code is the one IDE.
+- **Postponed:** Code City, Demo film.
 - **Known limits** (from `ludvig.md`):
   - The derived OpenAPI misses fields read deep in services.
   - `hr_genseq` does not see `aiohttp` or mocks.

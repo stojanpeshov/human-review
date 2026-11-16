@@ -207,7 +207,7 @@ def test_the_page_tells_a_multi_select_from_a_single_one():
 
 
 def test_a_component_kit_widget_is_considered_rather_than_invisible(tmp_path):
-    """Material renders its picker as a `<mat-select role="combobox">`, not a `<select>`.
+    """react-select renders its picker as an `<input role="combobox">`, not a `<select>`.
     An auditor that only knew tag names would be *silent* about it — not "considered and
     let past", silent, which is the answer a reviewer cannot check and an agent cannot
     quote. It is a candidate.
@@ -217,11 +217,11 @@ def test_a_component_kit_widget_is_considered_rather_than_invisible(tmp_path):
     so it is judged as one: a gap where combo belongs, said in words."""
     reg = registry_of([node("h", "div", ds="combo"),
                        control("h>s", ds_host="combo", ds_host_sig="h")])
-    widget = control("mat", "mat-select", "role=combobox", id="spec", aria_role="combobox",
-                     kit="mat-select")
+    widget = control("rs", "input", "role=combobox", id="react-select-3-input",
+                     aria_role="combobox", kit="react-select")
     f, = ds.audit_side(snap(widget), reg, "new")
     assert f["verdict"] == "bare" and f["role"] == "select" and f["expected_ds"] == ["combo"]
-    assert "Angular Material select" in f["message"] and "<b>combo</b>" in f["message"]
+    assert "a react-select" in f["message"] and "<b>combo</b>" in f["message"]
     # A text input wearing role=combobox (an autocomplete) is not a select.
     auto = control("ac", "input", "role=combobox", id="q", aria_role="combobox")
     assert ds.audit_side(snap(auto), reg, "new")[0]["verdict"] == "uncovered"
@@ -1070,14 +1070,13 @@ def test_a_component_tip_shows_its_own_tag_in_green():
 def test_a_foreign_tip_says_there_is_no_tag_to_want():
     """A kit control with no design-system counterpart: the found tag, and in the
     should-be row the fact that the design system has none — not an invented tag."""
-    pag = node("mat-paginator", "mat-paginator", role="paginator", kit="mat-paginator",
-               label="Select page")
+    pag = node("pg", "ul", kit="pagination", label="Select page")
     f, = ds.audit_side(snap(pag), _combo_registry(), "new")
     assert f["verdict"] == "foreign"
     m, = ds._marks_for([f], "new", _combo_registry())
-    assert '<code class="bad">&lt;mat-paginator&gt;</code>' in m["tip_html"]
+    assert '<code class="bad">&lt;ul class=&quot;pagination&quot;&gt;</code>' in m["tip_html"]
     assert "nothing \u2014 the design system has no paginator component" in m["tip_html"]
-    assert "An Angular Material paginator, from outside the design system." in m["tip_html"]
+    assert "A react-bootstrap pagination, from outside the design system." in m["tip_html"]
 
 
 def test_the_bubble_pair_uses_fixed_hues_for_the_always_dark_bubble():
@@ -1221,123 +1220,157 @@ def test_a_screen_without_frames_gets_no_checkbox():
         "contains('dsa-frameon')", "")
 
 
-# ── run 6 (hr-claude-6): a paginated, sortable owners grid built from Angular Material ──
+# ── a paginated, tabbed contacts list built from react-bootstrap ──────────────────────
 #
-# The tab said "1 of 19 screens changed", green, `clean` — while ds-audit.json's own
-# `uncovered` went 41 → 42. The one new control, the paginator's page-size select, was
-# listed as "#mat-select-0 — role combobox, not covered", and the paginator and matSort
-# were never judged at all. Below, the same screen in miniature.
+# Run 6 of the Angular original (hr-claude-6): the tab said "1 of 19 screens changed",
+# green, `clean` — while the one new control, a paginator's page-size select, was listed
+# as a kit counter, "role combobox, not covered", and the paginator itself was never
+# judged at all. Below, the same shape in mitt-ludvig's legacy kit: react-bootstrap tabs
+# over a list and a pagination bar with its page-size select.
 
 def _combo_registry():
     return registry_of([node("h", "div", ds="combo"),
                         control("h>s", ds_host="combo", ds_host_sig="h")])
 
 
-def _owners_grid():
-    """The new side of /owners: a table with matSort on two headers, a mat-paginator with
-    its page-size mat-select inside a mat-form-field, and the last-name search input."""
+def _contacts_list():
+    """The new side of /contacts: react-bootstrap `.nav-tabs` over the list, a
+    `.pagination` bar with its page-size `.form-select` inside, and the name search input."""
     return snap(
         control("input#lastName", "input", "input[type=text]", id="lastName",
                 name="lastName", label="Last name"),
-        node("t", "table", kit="mat-sort", box={"x": 60, "y": 250, "w": 1160, "h": 440}),
-        node("t>th:1", "th", kit="mat-sort-header", label="Name", kit_hosts=["mat-sort"]),
-        node("t>th:3", "th", kit="mat-sort-header", label="City", kit_hosts=["mat-sort"]),
-        node("p", "mat-paginator", kit="mat-paginator", label="Select page of owners",
+        node("t", "ul", kit="nav-tabs", label="Customers Contacts",
+             box={"x": 60, "y": 260, "w": 1160, "h": 40}),
+        node("t0", "table", box={"x": 60, "y": 310, "w": 1160, "h": 380}),
+        node("p", "ul", kit="pagination", label="Select page of contacts",
              box={"x": 60, "y": 715, "w": 1160, "h": 56}),
-        control("p>f>mat-select", "mat-select", "role=combobox", id="mat-select-0",
-                aria_role="combobox", kit="mat-select", label="Items per page:",
-                kit_hosts=["mat-form-field", "mat-paginator"],
+        control("p>li>select", "select", "select", cls=["form-select"], kit="form-select",
+                label="Items per page:", kit_hosts=["pagination"],
                 box={"x": 816, "y": 731, "w": 52, "h": 25}))
 
 
-def _owners_screen():
+def _contacts_screen():
     reg = _combo_registry()
     old = snap(control("input#lastName", "input", "input[type=text]", id="lastName",
                        name="lastName", label="Last name"),
                node("t0", "table"))
-    sides = {"new": {"label": "hr-claude-6", "commit": "", "page": {"w": 1280, "h": 900}},
+    sides = {"new": {"label": "ml-contacts", "commit": "", "page": {"w": 1280, "h": 900}},
              "old": {"label": "5a97353e", "commit": "", "page": {"w": 1280, "h": 900}}}
     added = {"dom": "added", "pixel_churn": None, "status": "added"}
     screen = ds.build_screen(
-        "Owners", old, _owners_grid(), reg, sides_meta=sides,
-        delta={"dom": {"added": ["t", "p", "p>f>mat-select"], "removed": ["t0"],
+        "Contacts", old, _contacts_list(), reg, sides_meta=sides,
+        delta={"dom": {"added": ["t", "p", "p>li>select"], "removed": [],
                        "changed": [], "moved": {}},
-               "elements": {"t": added, "p": added, "p>f>mat-select": added}},
-        route="/owners")
+               "elements": {"t": added, "p": added, "p>li>select": added}},
+        route="/contacts")
     return reg, screen
 
 
-def test_the_new_material_controls_are_judged_not_waved_through():
-    """mat-paginator and matSort are not design-system components and the registry has
-    none for their role: each is a gap, with the reason. The page-size select is the
-    paginator's own machinery — not a second gap — and the paginator's reason names it:
-    a mat-select where the registry's combo covers `select`."""
-    reg, screen = _owners_screen()
+def test_the_new_bootstrap_controls_are_judged_not_waved_through():
+    """react-bootstrap's pagination and tabs are not design-system components and the
+    registry has none for their role: each is a gap, with the reason. The page-size select
+    is the pagination bar's own machinery — not a second gap — and the bar's reason names
+    it: a `<select>` where the registry's combo covers `select`."""
+    reg, screen = _contacts_screen()
     by_kit = {f["element"].get("kit"): f for f in screen["findings"] if f["side"] == "new"}
-    paginator, sort, select = by_kit["mat-paginator"], by_kit["mat-sort"], by_kit["mat-select"]
-    assert paginator["verdict"] == sort["verdict"] == "foreign"
+    paginator, tabs, select = by_kit["pagination"], by_kit["nav-tabs"], by_kit["form-select"]
+    assert paginator["verdict"] == tabs["verdict"] == "foreign"
     assert select["verdict"] == "internal"
-    assert "Angular Material paginator" in paginator["message"]
-    assert "“Items per page” control is a <code>&lt;mat-select&gt;</code>, not " \
+    assert "a react-bootstrap pagination" in paginator["message"]
+    assert "“Items per page” control is a <code>&lt;select&gt;</code>, not " \
            "<b>combo</b>" in paginator["message"]
-    assert sort["element"]["label"] == "matSort on Name, City"
-    assert "no component for a <code>sortable table header</code>" in sort["message"]
+    assert "no component for a <code>tabs</code>" in tabs["message"]
     # The rule under the row states the fact, like a `bare` one — no advice paragraph
     # ("either the design system gets one, or the team agrees…") that read model-written.
-    assert ds.rule_html(paginator, reg, "Owners") == (
-        "An Angular Material paginator (<code>&lt;mat-paginator&gt;</code>); the design "
-        "system has no <code>paginator</code> component.")
+    assert ds.rule_html(paginator, reg, "Contacts") == (
+        "A react-bootstrap pagination (<code>&lt;ul class=&quot;pagination&quot;&gt;</code>);"
+        " the design system has no <code>paginator</code> component.")
     assert paginator["history"] == "brought in by this branch"
-    assert sorted(screen["summary"]["regressions"]) == sorted([paginator["id"], sort["id"]])
+    assert sorted(screen["summary"]["regressions"]) == sorted([paginator["id"], tabs["id"]])
     assert screen["summary"]["new"]["foreign"] == 2
     result = ds.build_result([screen], reg)
     assert result["verdict"] == "gaps", "two new outside controls are not a clean audit"
 
 
-def test_a_lone_material_select_is_the_gap_where_combo_belongs():
+def test_a_lone_react_select_is_the_gap_where_combo_belongs():
     """Outside a kit control it is judged on its own: a select-only combobox fills the role
-    combo covers, so it is `bare`, named as the Material control it is — not "plain"."""
-    sel = control("s", "mat-select", "role=combobox", id="mat-select-3", kit="mat-select",
+    combo covers, so it is `bare`, named as the react-select it is — not "plain"."""
+    sel = control("s", "input", "role=combobox", id="react-select-3-input", kit="react-select",
                   aria_role="combobox", label="Vet")
     f, = ds.audit_side(snap(sel), _combo_registry(), "new")
     assert f["verdict"] == "bare" and f["expected_ds"] == ["combo"]
     mark, = ds._marks_for([dict(f, delta={"status": "added"})], "new")
-    assert mark["badge"] == "✗ new <mat-select> — should be the combo component"
+    assert mark["badge"] == "✗ new <input id=\"react-select-…\"> — should be the combo component"
+
+
+def test_a_bootstrap_button_is_the_gap_where_fluent_button_belongs():
+    """mitt-ludvig's policy: react-bootstrap is legacy. A `.btn` where the app's Fluent
+    Button covers `button` is a gap, named by the class that makes it one; a `.btn` that a
+    design-system wrapper renders (`src/components`' Button) is that wrapper's own."""
+    fluent = node("fb", "button", ds="Button", ds_via="fluent", native=True, role="button")
+    reg = registry_of([fluent])
+    assert {"role": "button", "covered_by": ["Button"], "provenance": "catalogue"} in reg["roles"]
+    btn = control("b", "button", "button", kit="btn", label="Save")
+    wrapped = node("w", "button", ds="Button", ds_via="wrapper", native=True, role="button",
+                   kit="btn")
+    f, w = ds.audit_side(snap(btn, wrapped), reg, "new")
+    assert f["verdict"] == "bare" and f["expected_ds"] == ["Button"]
+    assert "a react-bootstrap button" in f["message"]
+    assert w["verdict"] == "ds"
+    m, = ds._marks_for([dict(f, delta={"status": "added"})], "new", reg)
+    assert m["badge"] == '✗ new <button class="btn"> — should be <Button>'
+
+
+def test_a_fluent_part_that_covers_nothing_is_neither_drawn_nor_a_gap():
+    """A Fluent Tab is a `<button>`: it is the design system's, so not a gap — and it covers
+    no role, so it is not drawn as a component either. Fluent's own insides are internal."""
+    reg = registry_of([node("fb", "button", ds="Button", ds_via="fluent", native=True,
+                            role="button")])
+    tab = node("tab", "button", ds="Tab", ds_via="fluent", native=True, role="role=tab")
+    inner = control("dd>b", "button", "role=combobox", ds_host="Dropdown", ds_host_sig="dd")
+    dd = node("dd", "div", ds="Dropdown", ds_via="fluent")
+    got = {f["element"]["sig"]: f["verdict"] for f in ds.audit_side(snap(tab, dd, inner), reg,
+                                                                     "new")}
+    assert got == {"tab": "internal", "dd": "ds", "dd>b": "internal"}
 
 
 def test_a_kit_multi_select_the_base_already_had_is_context_not_a_gap():
-    """The vet form's specialties picker is a Material multi-select, left there on
-    purpose: a multi-select is not the combo's `select`, and the base renders it too. It
-    stays considered-and-let-past, never charged to a branch that did not touch it."""
-    spec = control("mat-select#spec", "mat-select", "role=combobox", id="spec",
-                   kit="mat-select", aria_role="combobox", label="Specialties",
-                   cls=["mat-mdc-select", "mat-mdc-select-multiple"])
+    """A react-select multi-picker the base already renders, left there on purpose: a
+    multi-select is not the combo's `select`, and the base renders it too. It stays
+    considered-and-let-past, never charged to a branch that did not touch it."""
+    spec = control("rs#spec", "input", "role=combobox", id="react-select-5-input",
+                   kit="react-select", aria_role="combobox", label="Specialties",
+                   multiple=True)
     reg = _combo_registry()
     f, = ds.audit_side(snap(spec), reg, "new")
     assert f["role"] == "select[multiple]" and f["verdict"] == "foreign"
     sides = {s: {"label": s, "page": {"w": 10, "h": 10}} for s in ("new", "old")}
-    screen = ds.build_screen("Edit a vet", snap(spec), snap(spec), reg, sides_meta=sides,
+    screen = ds.build_screen("Edit a contact", snap(spec), snap(spec), reg, sides_meta=sides,
                              delta={"dom": {"added": [], "removed": [], "changed": [],
                                             "moved": {}}, "elements": {}})
     assert {f["verdict"] for f in screen["findings"]} == {"uncovered"}
     assert screen["summary"]["regressions"] == [] and screen["summary"]["pre_existing"] == []
 
 
-def test_an_element_is_named_by_its_accessible_name_never_a_kit_counter():
-    """"#mat-select-0" is Material's counter, not a name. The page-side extractor reads
-    the name the control carries (`aria-labelledby` → "Items per page:") and refuses an
-    auto id as identity; the row and the considered list say the name."""
-    f = {"element": {"tag": "mat-select", "id": "mat-select-0", "label": "Items per page:",
-                     "kit": "mat-select"}}
+def test_an_element_is_named_by_its_accessible_name_never_a_library_counter():
+    """"#react-select-2-input" is react-select's counter, not a name, and `field-_r_3_` is
+    React's. The page-side extractor reads the name the control carries
+    (`aria-labelledby` → "Items per page:") and refuses an auto id as identity; the row
+    and the considered list say the name."""
+    f = {"element": {"tag": "input", "id": "react-select-2-input", "label": "Items per page:",
+                     "kit": "react-select"}}
     assert ds.element_name(f) == "Items per page"
     f["element"]["label"] = ""
-    assert ds.element_name(f) == "Angular Material select"
+    assert ds.element_name(f) == "react-select"
     assert ds.element_name({"element": {"tag": "input", "id": "lastName"}}) == "lastName"
+    for counter in ("field-_r_3_", "fui-r5", "dropdown«r1a»", ":r2:"):
+        assert ds.AUTO_ID.search(counter), counter
+    assert not ds.AUTO_ID.search("customerName")
     assert "aria-labelledby" in ds.SNAPSHOT_JS and "!el.contains(l)" in ds.SNAPSHOT_JS
     assert "AUTO_ID.test(i) ? '' : i" in ds.SNAPSHOT_JS
     reg = _combo_registry()
-    lone = control("s", "div", "role=switch", id="mat-slide-toggle-2", aria_role="switch",
-                   selector="#mat-slide-toggle-2", label="Notify me")
+    lone = control("s", "div", "role=switch", id="switch-_r_2_", aria_role="switch",
+                   selector="#switch-_r_2_", label="Notify me")
     sides = {s: {"label": s, "page": {"w": 10, "h": 10}} for s in ("new", "old")}
     screen = ds.build_screen("s", snap(lone), snap(lone), reg, sides_meta=sides,
                              delta={"dom": {"added": [], "removed": [], "changed": ["s"],
@@ -1345,13 +1378,13 @@ def test_an_element_is_named_by_its_accessible_name_never_a_kit_counter():
     frag = ds.render(ds.build_result([screen], reg), "")
     considered = frag[frag.index('class="dsa-considered"'):]
     considered = considered[:considered.index("</details>")]
-    assert "<b>Notify me</b>" in considered and "#mat-slide-toggle-2" not in considered
+    assert "<b>Notify me</b>" in considered and "#switch-_r_2_" not in considered
 
 
 def test_the_header_says_the_gaps_and_components_and_never_just_a_screen_count():
     """"1 of 19 screens changed" alone could not be told from an audit that judged nothing.
     The gaps are said in the warning chip, and a move in what was let past is said too."""
-    reg, screen = _owners_screen()
+    reg, screen = _contacts_screen()
     frag = ds.render(ds.build_result([screen], reg), "")
     hdr = re.sub(r"<[^>]+>", "", frag[frag.index('<p class="dsa-hdr">'):].split("</p>")[0])
     assert hdr == ("1 of 1 screens changed · ⚠ +2 gaps")
@@ -1361,7 +1394,7 @@ def test_the_header_says_the_gaps_and_components_and_never_just_a_screen_count()
     assert txt(moved, long=True) == "+1 control no design-system component claims"
     assert txt(moved) == "+1 not judged"
     # Nothing moved for the design system: said, not left blank.
-    _, quiet = _owners_screen()
+    _, quiet = _contacts_screen()
     for f in quiet["findings"]:
         f["verdict"] = "uncovered"
     quiet["summary"] = dict(quiet["summary"], regressions=[],
@@ -1374,14 +1407,14 @@ def test_the_header_says_the_gaps_and_components_and_never_just_a_screen_count()
 def test_a_changed_screen_always_gets_its_findings_table():
     """side / element / role / why / delta / churn, with the gap rows — and on a screen
     with nothing to judge, a row saying so instead of no table at all."""
-    reg, screen = _owners_screen()
+    reg, screen = _contacts_screen()
     frag = ds.render(ds.build_result([screen], reg), "")
     table = frag[frag.index('<table class="dsa-table">'):frag.index("</table>")]
     for th in ("side", "element", "role", "why", "delta", "churn"):
         assert f"<th>{th}</th>" in table
     assert table.count('<tr class="bad"') == 2 and table.count(">gap</span>") == 2
-    assert "<b>Select page of owners</b>" in table and "<b>matSort on Name, City</b>" in table
-    _, quiet = _owners_screen()
+    assert "<b>Select page of contacts</b>" in table and "<b>Customers Contacts</b>" in table
+    _, quiet = _contacts_screen()
     quiet["findings"] = [f for f in quiet["findings"] if f["verdict"] == "uncovered"]
     frag = ds.render(ds.build_result([quiet], reg), "")
     assert "nothing to judge here" in frag[frag.index('<table class="dsa-table">'):]
@@ -1390,14 +1423,14 @@ def test_a_changed_screen_always_gets_its_findings_table():
 def test_the_change_frame_is_labelled_and_its_colour_is_in_the_legend():
     """A purple box with no words and no key: the frame now carries a chip naming what
     was judged inside it, and the legend carries the frame's colour."""
-    reg, screen = _owners_screen()
+    reg, screen = _contacts_screen()
     screen["frames"] = {"new": [{"x": 52, "y": 240, "w": 1176, "h": 540, "insert": False}],
                         "old": [{"x": 52, "y": 240, "w": 1176, "h": 900, "insert": False}]}
     frag = ds.render(ds.build_result([screen], reg), "")
     # Eval run 8: the chip on the frame's edge covered the table header it framed. The
     # words are a caption under the picture now; the frame itself carries none.
     assert '<p class="dsa-framecap"><span class="dsa-fcap"><i></i>' \
-           "<b>✗ matSort · ✗ mat-paginator — added</b></span></p>" in frag
+           "<b>✗ nav-tabs · ✗ pagination — added</b></span></p>" in frag
     assert "<b>changed — nothing here to judge</b>" in frag     # the Old view
     assert not re.search(r'class="dsa-frame"[^>]*><b', frag), "no chip on the picture"
     assert frag.index('class="dsa-frame"') < frag.index('class="dsa-framecap"')
@@ -1410,7 +1443,7 @@ def test_several_frames_are_numbered_and_the_caption_is_keyed_by_number():
     """Only a frame with a verdict in it is numbered: the number keys a row of the table.
     One with nothing judged in it (Book A Visit's new table header) keeps its caption and
     gets no number — numbered, it read as a finding with its row missing."""
-    reg, screen = _owners_screen()
+    reg, screen = _contacts_screen()
     screen["frames"] = {"new": [{"x": 52, "y": 240, "w": 1176, "h": 300, "insert": False},
                                 {"x": 52, "y": 900, "w": 600, "h": 100, "insert": False},
                                 {"x": 52, "y": 700, "w": 600, "h": 100, "insert": False}],
@@ -1424,17 +1457,17 @@ def test_several_frames_are_numbered_and_the_caption_is_keyed_by_number():
 
 
 def test_the_element_column_wraps_a_selector_only_between_its_steps():
-    """Eval run 8: `div#ownersTable>ta / ble.mat-sort.tabl / e:1` — `break-all` cut the
+    """Eval run 8: `div#ownersTable>ta / ble.tabl / e:1` — `break-all` cut the
     selector mid-token. It breaks only after a `>` now, and the full path is the tip."""
-    reg, screen = _owners_screen()
+    reg, screen = _contacts_screen()
     frag = ds.render(ds.build_result([screen], reg), "")
     cells = re.findall(r'<code class="dsa-sel" data-tip="([^"]*)">(.*?)</code>', frag)
     assert cells
     for tip, shown in cells:
         assert "<wbr>" not in tip, "the tip is the whole path, as text"
         assert shown.count("<wbr>") == shown.count("&gt;"), shown
-    assert ds.selector_html("div#a>mat-x:1") == \
-        '<span class="dsa-step">div#a</span>&gt;<wbr><span class="dsa-step">mat-x:1</span>'
+    assert ds.selector_html("div#a>form-x:1") == \
+        '<span class="dsa-step">div#a</span>&gt;<wbr><span class="dsa-step">form-x:1</span>'
     assert ".dsa-sel .dsa-step { white-space: nowrap; }" in ds.CSS, "no break after a hyphen"
     rule = re.search(r"\.dsa-sel \{([^}]*)\}", ds.CSS).group(1)
     assert "break-all" not in rule and "word-break: normal" in rule
@@ -1476,7 +1509,7 @@ def test_each_side_records_its_commit_and_the_old_side_is_labelled_by_it(tmp_pat
 
 
 def test_the_count_opens_a_box_that_names_each_side_once():
-    reg, screen = _owners_screen()
+    reg, screen = _contacts_screen()
     screen["sides"]["new"].update(label="abc12345", commit="abc12345" + "0" * 32)
     screen["sides"]["old"].update(label="main", commit="d01c3776" + "0" * 32)
     result = ds.build_result([screen], reg)

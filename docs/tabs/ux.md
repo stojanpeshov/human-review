@@ -12,24 +12,44 @@
 
 ## What you see
 
-- **The verdict** — gaps, regressions, how many screens changed, how many DS components.
-- **Every changed screen, before and after** — design-system components outlined green,
-  native controls filling a role the design system covers outlined red, what this branch
-  changed outlined blue.
-- **Unchanged screens** are named in one line: every screen in the app's catalogue is shot,
-  and only those whose DOM differs get a viewer.
+- **The verdict** — gaps, regressions, how many screens changed, how many design-system
+  controls.
+- **Every changed screen, before and after** — design-system controls outlined green;
+  controls from outside it, in a role it covers, outlined red: a react-bootstrap `.btn`,
+  `.form-select`, `.form-control` or `.form-check-input`, a react-select, a bare `<select>`
+  or `<button>`. A react-bootstrap pagination or tabs bar, which Fluent has no direct
+  counterpart for, is red with that reason.
+- **Unchanged screens** are named in one line: every route of the app is shot, and only
+  those whose DOM differs get a viewer.
+- **Not visited** — a route with a `:param` nobody gave a value, or one that did not load
+  on both sides, in one quiet line. A route the branch changed and the audit could not reach
+  is a red line at the top.
 
-The defect it hunts is the bare `<select>` somebody copied from an older template: it looks
-close enough that review slides straight past it.
+At Ludvig the design system is **Fluent UI v9**, **`@lrfkonsult/mitt-ludvig-ui`** and the
+wrappers in mitt-ludvig's **`src/components`**; react-bootstrap is the legacy kit. A Fluent
+control is recognised by the root class Fluent stamps on it (`fui-Button`, `fui-Dropdown`,
+`fui-Combobox`, `fui-Input`, `fui-Checkbox`, `fui-DatePicker`…), a wrapper by the selector
+`steps.dsaudit.ds-hosts` gives it (`src/components`' Button renders a `.btn` with
+`data-testid="button"`, its TextLink a `.btn` link; its Dropdown is react-select inside
+`div.dropdown`), and any other
+component can carry `data-ds="<name>"`. A Fluent part that is no control of its own (a Tab,
+a Link, a sortable header cell) makes the native controls inside it its own and is not drawn.
 
 ## What it needs
 
-- **Playwright**, **numpy**, and both revisions served — the run starts the branch and the
-  merge-base side by side.
-- The app's screen catalogue in `human-review.json`, and `data-ds="<name>"` on your
-  design-system hosts.
+- **Playwright** and **numpy** in the skill's venv.
+- **The app's routes**: read off `frontend/src/routes.tsx` and the sub-route modules it
+  imports (parsed, not run, by `react_routes.py`). `steps.dsaudit.screens` gives a route
+  with a parameter its value (`"Customer page": "assignments/customers/1001/customer-page"`),
+  adds a screen (a key that matches no route), or drops one (`null`).
+- **Both revisions served**: `steps.dsaudit.app` in
+  [`human-review.ludvig.json`](../../skills/human-review/human-review.ludvig.json) starts a
+  Vite dev server per commit with `vite-app.py` — the checkout for the branch, a `git
+  worktree` of the merge-base for the base, with the API (msw) and the login mocked. Setup:
+  [`ludvig.md`](../ludvig.md#the-ux-tab-on-mitt-ludvig).
 
 ## Deeper
 
 - [The design-system audit](../../README.md#the-design-system-audit)
-- Produced by [`ds-audit.py`](../../skills/human-review/scripts/ds-audit.py)
+- Produced by [`ds-audit.py`](../../skills/human-review/scripts/ds-audit.py); routes by
+  [`react_routes.py`](../../skills/human-review/scripts/react_routes.py)

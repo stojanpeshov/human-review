@@ -202,46 +202,9 @@ def test_stop_with_no_server_for_this_report_kills_nothing(monkeypatch, tmp_path
     assert seen["killed"] == []
 
 
-def test_inside_intellij_the_tool_window_shows_the_page_of_this_checkout(monkeypatch, tmp_path):
-    """IntelliJ's terminal says so in TERMINAL_EMULATOR; its one bridge for every project
-    window is told the checkout, so the page lands in the window that has it."""
-    checkout = tmp_path / "shop"
-    checkout.mkdir()
-    bodies = []
-    httpd, shown = _bridge(tmp_path, ".human-review", "idea-1.json", checkout, app="idea", bodies=bodies)
-    monkeypatch.setattr(sr.Path, "home", classmethod(lambda cls: tmp_path))
-    for k in ("TERM_PROGRAM", "VSCODE_IPC_HOOK_CLI"):
-        monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("TERMINAL_EMULATOR", "JetBrains-JediTerm")
-    import webbrowser
-    monkeypatch.setattr(webbrowser, "open", lambda url: shown.append(("browser", url)))
-    try:
-        sr.open_page("http://127.0.0.1:7654/review.html", checkout / ".human-review")
-    finally:
-        httpd.shutdown()
-    assert shown == ["http://127.0.0.1:7654/review.html"]
-    assert bodies == [{"url": "http://127.0.0.1:7654/review.html", "root": str(checkout / ".human-review")}]
-
-
-def test_an_intellij_without_jcef_answers_501_and_the_browser_opens(monkeypatch, tmp_path):
-    checkout = tmp_path / "shop"
-    checkout.mkdir()
-    httpd, shown = _bridge(tmp_path, ".human-review", "idea-1.json", checkout, app="idea", status=501)
-    monkeypatch.setattr(sr.Path, "home", classmethod(lambda cls: tmp_path))
-    for k in ("TERM_PROGRAM", "VSCODE_IPC_HOOK_CLI"):
-        monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("TERMINAL_EMULATOR", "JetBrains-JediTerm")
-    import webbrowser
-    monkeypatch.setattr(webbrowser, "open", lambda url: shown.append(("browser", url)))
-    try:
-        sr.open_page("http://127.0.0.1:7654/review.html", checkout)
-    finally:
-        httpd.shutdown()
-    assert shown == ["http://127.0.0.1:7654/review.html", ("browser", "http://127.0.0.1:7654/review.html")]
-
-
 def test_which_terminal_the_server_was_started_from():
     assert sr.terminal_ide({"TERM_PROGRAM": "vscode"}) == "vscode"
     assert sr.terminal_ide({"VSCODE_IPC_HOOK_CLI": "/x"}) == "vscode"
-    assert sr.terminal_ide({"TERMINAL_EMULATOR": "JetBrains-JediTerm"}) == "idea"
+    # IntelliJ's terminal is no editor of ours any more: its pages open in the browser.
+    assert sr.terminal_ide({"TERMINAL_EMULATOR": "JetBrains-JediTerm"}) is None
     assert sr.terminal_ide({"TERM_PROGRAM": "Apple_Terminal"}) is None

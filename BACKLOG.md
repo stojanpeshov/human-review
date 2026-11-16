@@ -59,7 +59,7 @@ Status: ✅ done · 🔄 in progress · ⏸ blocked / needs a decision · 💬 d
 - ⏸ merged-results pipelines: their SHA is the merge ref's, so the gate sees none for the branch's head (needs `merge_requests/:iid/pipelines`)
 - ⏸ the page says "PR"; on an MR that wants "MR" and `!7`
 - ⏸ a job-level gate (`ci.workflows` naming a job), if a pipeline's status turns out too coarse
-- ⏸ *in VS Code* / *in IntelliJ* for an MR: both open GitHub PRs only
+- ⏸ *in VS Code* for an MR: it opens GitHub PRs only (IntelliJ support dropped on the Ludvig fork)
 
 ## Bitbucket Server / Data Center (issue #4, averath on 10.5)
 - ✅ `BitbucketServerForge` in `hrbuild/shared/forge.py`: origin detection, every web link, PR title/description (+ merge-risk line), Jenkins build statuses as the CI gate, review-thread counts

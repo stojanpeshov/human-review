@@ -330,7 +330,7 @@ List a diagram in `only` only to put it somewhere else.
 `hrbuild/tabs/sequence.py` `derived_snippets`): the tests quoted beside the pictures are read
 off the pictures themselves — every `.genseq.puml` names the scenario that drew it in its
 `title [[src://<test>:<line> …]]` — and off the tags, `@generate_sequence` in a `.feature`,
-`@GenerateSequence` in Java, the Playwright `{tag: [GENERATE_SEQUENCE_TAG]}`. Each scenario is
+`@pytest.mark.genseq` on a pytest test, the Playwright `{tag: [GENERATE_SEQUENCE_TAG]}`. Each scenario is
 quoted from its tag to its last line, one multi-span reference per test file. A tagged
 scenario no picture names lands in the group *Tagged for tracing, but no diagram yet*, with why.
 The heading is the skill's too: *Sequence diagrams generated from traced tests*.
@@ -352,8 +352,8 @@ example trace, `hrbuild/assets/trace-example.png`, copied beside the page).
 
 **The kind of test — `UI` / `API` / `unit` — is not authored.** Every pair leads with the
 Tests tab's own chip, read off the diagram it holds: the first lifeline is the end the run
-was driven from, `Browser` through the screens, `Client` from a `@SpringBootTest` in the
-same JVM, one lifeline alone for a test nobody else could observe. That is the distinction
+was driven from, `Browser` through the screens, `Test` from a pytest test driving the
+handlers in-process, one lifeline alone for a test nobody else could observe. That is the distinction
 the tab's tip already draws, so reading it off the picture keeps badge and tip from
 disagreeing, and a `.spec.ts` that is a Playwright run in one module and a component test
 in the next is not settled by a guess at its path. A suite whose driver goes by a name this
@@ -469,8 +469,7 @@ purpose.
   "command": "cd ~/workspace/petclinic && ./start-docker.sh up --ref 9f3c1ab",
   "stop": "cd ~/workspace/petclinic && ./start-docker.sh down petclinic-9f3c1ab",
   "urlCommand": "cd ~/workspace/petclinic && ./start-docker.sh url petclinic-9f3c1ab",
-  "base": "http://localhost:4200",
-  "reset": "/__reset"
+  "base": "http://localhost:4200"
 }
 ```
 
@@ -495,7 +494,7 @@ over. Nothing describes the journey twice, so nothing can drift.
 environment first and the verbs that act on it after:
 
 ```
-served    Running app    http://localhost:53421     Stop ■   Reset DB to: [default] [green]
+served    Running app    http://localhost:53421     Stop ■
 off disk  Running app    Offline    Start App in Docker 📋   Stop 📋
 ```
 
@@ -525,39 +524,26 @@ while its precondition is missing is one that lies:
 |---|---|---|
 | `Start` | `command` | off disk always; served, while nothing is up |
 | `Stop` | `stop` | off disk always; served, while something is up |
-| `Reset DB` | `reset` | served, and something answers at the address |
-| one per fixture | `reset`, and `GET <reset>` lists it | as `Reset DB` |
 
 Off disk both are on screen whatever the health check says. Neither can *run*
 there — they are clipboards — and a clipboard for `stop` is exactly as useful with the app
 down as up: the reader is pasting it into a terminal, where the state of things is their
-business and not this page's. `Reset DB` is the exception and the reason is that it is not a
-shell command at all: it is a `POST` the application answers, so there is no line for
-anybody to paste and nothing for a clipboard there to be the honest form of.
+business and not this page's.
 
-`stop` and `reset` are **optional and opt-in**, and neither is ever derived from `command`:
-turning `… up --ref abc` into `… down --ref abc` by string surgery works for one host and
-fails silently on the next. `stop` is a command the host runs; `reset` is a path the
-environment answers on `POST` to put the data back to its starting point. Omit either and
-no button is drawn.
+`stop` is **optional and opt-in**, and never derived from `command`: turning
+`… up --ref abc` into `… down --ref abc` by string surgery works for one host and fails
+silently on the next. Omit it and no button is drawn. (The page no longer draws a Reset DB
+or per-fixture Seed control — that was petclinic's Flyway reset; a `reset` here is ignored.)
 
-The environment may also offer **fixtures**: named datasets it restores *on top of* the
-seed. The row asks `GET <base><reset>` for them each time it finds the app up, and with
-any listed it reads `Reset DB to: [default] [green] …` — `default` is the seed, and each
-fixture's click is `POST <reset>/<name>`. The expected answer is
-`{"fixtures": ["green", …]}`. Nothing in the content file lists them: a fixture added to the project is a button on the next
-probe, and an environment that answers with no list keeps the lone `Reset DB`.
-
-Resetting is never automatic — doing it on every link click would throw
-away work the reviewer was in the middle of — and `Stop` empties the address box, since
-leaving it behind would leave every link in the transcript pointing confidently at nothing.
+`Stop` empties the address box, since leaving it behind would leave every link in the
+transcript pointing confidently at nothing.
 
 `command`, `stop`, `urlCommand` and `drive` are **run** on a page served by
 `serve-review.py` and are otherwise inert: the build writes them into
 `.human-review/.actions.json` and the button sends the id of the one it wants, never the
 command itself. Served, `Start` has the server scrape the `http://localhost:<port>` line
 the command prints and fills the address in — which replaces the `Offline` pill with the
-address as a link, and brings up `Stop`, `Reset DB` and every `▸` in the
+address as a link, and brings up `Stop` and every `▸` in the
 transcript.
 
 Off disk none of that exists, and the row says so by wearing the clipboard rather than by
@@ -732,12 +718,7 @@ takes them, so the page is a **tab strip over panels**, driven by a `tabs` array
   {"id":"sequence","label":"Sequence",
    "blocks":[{"type":"testpairs","id":"sequences","kind":"sequence"}]},
   {"id":"packages","label":"Structure",
-   "blocks":[{"type":"diagrams","only":["Backend Java packages"],
-              "context":{"src":"petclinic-backend/docs/packages.puml","name":"Backend Java packages","note":"…"}},
-             {"type":"puml","src":"petclinic-backend/docs/generated/MavenModules.puml",
-              "name":"Backend Build Units","status":"unchanged"},
-             {"type":"diagrams","only":["Frontend TypeScript packages"],
-              "context":{"src":"petclinic-frontend/docs/frontend-packages.puml","name":"Frontend TypeScript packages"}},
+   "blocks":[{"type":"diagrams","only":["Packages"]},
              {"type":"diagrams","manifest":"assets/c2/MANIFEST.tsv","only":["C2-Containers"],
               "id":"c2-containers"}]},
   {"id":"city","label":"Code City","blocks":[{"type":"codecity"}]},
@@ -841,15 +822,14 @@ call to a service nobody documented shows up here the first time a test makes it
 caption links out to **c4model.com**, because "C2" is jargon the page has no room to teach
 and Simon Brown's own site explains the four levels in a paragraph.
 
-It sits **last on Structure, after the Java packages, the build units and the Frontend packages**, and not on a tab of its
-own. Structure is already the question *what shape is this thing*, asked at two altitudes —
-packages inside one module, then the modules themselves — and the containers are the third
-and widest. A pill of its own put one question in two places on the strip and made the
-reader choose between them; three diagrams down one panel is the ladder they were already
-climbing.
+It sits **last on Structure, after the Packages diagram**, and not on a tab of its
+own. Structure is already the question *what shape is this thing*, asked first of the
+packages inside the service — and the containers are the wider altitude. A pill of its own
+put one question in two places on the strip and made the reader choose between them; two
+diagrams down one panel is the ladder they were already climbing.
 
-**A test harness is not a container.** A `@SpringBootTest` driving controllers through
-MockMvc is a lifeline in every sequence it records and is deployed nowhere — no browser, no
+**A test harness is not a container.** A pytest test calling the handlers in-process
+is a lifeline in every sequence it records and is deployed nowhere — no browser, no
 socket, no server — so `"drop": true` in `steps.c2.containers` keeps it out. A Playwright
 suite is the opposite and stays: it drives the real front end in a real browser, so that box
 is a container that genuinely ships. The rule is what runs in production, not what appears
@@ -1049,10 +1029,10 @@ Four tabs need something said about how they are written:
     somewhere else and not here makes the reader hold two lists and diff them. Tests the
     manifest knows but the map has no excerpt for get their excerpt cut at build time.
   - **The kind of test is read off the file name, in amber.** The location on a row
-    (`add-visit.feature:20`, `visits-page.component.spec.ts:78`, `VisitTest.java:197`)
+    (`add-visit.feature:20`, `VisitsPage.test.tsx:78`, `test_visit.py:197`)
     wraps the run of extensions after the name in `<span class="rm-tk">`, coloured with
     `--drift` — `.feature` is a Gherkin scenario, `.spec.ts` a Playwright test,
-    `.component.spec.ts` an Angular component test, `.java` a JUnit one. The badge says
+    `.test.tsx` a Vitest component test, `.py` a pytest one. The badge says
     UI/API/unit; the suffix says *which framework*, and thirteen rows of near-identical
     monospace names hide it. The name and the `:line` keep the link colour.
   - **An untouched test wears a mark too**, not silence. On a list headed *every test this
@@ -1133,8 +1113,8 @@ Four tabs need something said about how they are written:
     `new file` is a fact *about* a file and leading with it makes the reader hold it in
     mind across the whole row before the row says which file is new. **The face is the
     file's name and the full path is on hover** — "which file is this?" is the only question the row exists to answer, and a
-    repo-relative Java path spends five segments on module, `src/main/java` and the org
-    package before it gets there. A file at the repo root has no path to move and gets no
+    repo-relative path spends several segments on folders
+    before it gets there. A file at the repo root has no path to move and gets no
     tooltip repeating its own name.
 
     A fragment that rolls its own version of this row is a fourth header the reader has to

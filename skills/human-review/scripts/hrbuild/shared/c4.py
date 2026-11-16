@@ -165,10 +165,10 @@ def _test_file(root: Path, name: str) -> Path | None:
 def _checked_label(note: str, root: Path) -> tuple[str, str]:
     """`(header label, what stays under the card)` for one view's test note.
 
-    *Its components and their arrows are checked against the code by C3ArchTest.java.* was a
+    *Its components and their arrows are checked against the code by <test>.* was a
     sentence under the picture, read after the picture; the fact is the card's credential,
-    so it goes in the header as *ArchUnit-checked by C3ArchTest* (Victor, 9 Oct 2026), the
-    whole sentence on hover and the test's name the way into it. A note that is not that
+    so it goes in the header as *Tested vs code* (Victor, 9 Oct 2026), the whole sentence
+    on hover and the test's name the way into it. A note that is not that
     sentence (hand-maintained, uncompared) stays under the card, where it was."""
     # A view nothing compares with the code: the same header slot, an amber badge in two
     # words, the sentence on hover (Victor, 20 Oct 2026) — not a paragraph under the card.
@@ -178,22 +178,15 @@ def _checked_label(note: str, root: Path) -> tuple[str, str]:
     m = _CHECKED_NOTE.match(note or "")
     if not m:
         return "", note
-    href, archunit = "", True
+    href = ""
     for name in (n.strip() for n in m["names"].split(",")):
         path = _test_file(root, name)
-        text = ""
-        if path:
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                pass
-            href = href or f"vscode://file/{path.resolve()}:1:1"
-        archunit &= "com.tngtech.archunit" in text
+        if path and not href:
+            href = f"vscode://file/{path.resolve()}:1:1"
     first = note[:len(note) - len(m["rest"])].strip()
-    # The Structure tab's one credential badge (`diagrams.prov_badge`), after the status:
-    # it used to be *ArchUnit-checked by C3ArchTest* before it, in words of its own. The
-    # sentence is the hover and the test is where a click goes.
-    label = prov_badge("ArchUnit-tested vs code" if archunit else "Tested vs code", first, href)
+    # The Structure tab's one credential badge (`diagrams.prov_badge`), after the status.
+    # The sentence is the hover and the test is where a click goes.
+    label = prov_badge("Tested vs code", first, href)
     return label, m["rest"].strip()
 
 

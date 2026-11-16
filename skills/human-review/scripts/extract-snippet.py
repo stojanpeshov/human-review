@@ -42,7 +42,6 @@ REF_RE = re.compile(r"^(?P<path>.+?):(?P<spans>\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)$"
 SPAN_RE = re.compile(r"^(?P<start>\d+)(?:-(?P<end>\d+))?$")
 
 LANG_BY_SUFFIX = {
-    ".java": "java",
     ".ts": "typescript",
     ".js": "javascript",
     ".html": "html",
@@ -64,22 +63,8 @@ LANG_BY_SUFFIX = {
 LIGHT_STYLE = "friendly"
 DARK_STYLE = "github-dark"
 
-# Plain `.html` is Pygments' plain HtmlLexer, which does not know Angular's binding
-# syntax — `[(ngModel)]="…"`, `[options]="…"`, `(click)="…"`, `*ngIf="…"` — and tags every
-# bracket and dot in it `Error`, which both styles above render as a red-bordered box.
-# Caught here, against the body, because the giveaway is the syntax, not the path: a
-# component's own `.html` carries no `ng2` or `component` marker a filename check could
-# key off.
-_ANGULAR_BINDING_RE = re.compile(r'\[\(?[\w.-]+\)?\]=|\(\w[\w.-]*\)=|\*ng[A-Z]\w*\s*=')
-
-
 def _lexer_for(path: Path, body: str):
     """Filename first (it is authoritative), guessing only as a fallback."""
-    if path.suffix == ".html" and _ANGULAR_BINDING_RE.search(body):
-        try:
-            return get_lexer_by_name("html+ng2")
-        except ClassNotFound:
-            pass
     try:
         return get_lexer_for_filename(path.name, body)
     except ClassNotFound:
@@ -136,9 +121,9 @@ def stylesheet() -> str:
         ".srcbar { display:flex; align-items:center; flex-wrap:wrap; gap:7px;\n"
         "  justify-content:flex-end; margin:0 0 .5rem; }\n"
         ".srcbar .srcbar-path { text-align:right; }\n"
-        # A Java test path is longer than this column is wide. `anywhere` lets it wrap, and
+        # A deep test path is longer than this column is wide. `anywhere` lets it wrap, and
         # the <wbr> after each slash keeps every fragment a readable path segment;
-        # `break-word` alone would split `victor` down the middle.
+        # `break-word` alone would split a package name down the middle.
         ".srcbar .srcref { margin-bottom:0; overflow-wrap:anywhere; }\n"
         "@media (prefers-color-scheme: dark) {\n"
         "  pre.code .ln-row.added .dm { border-left-color:#3fb950; color:#3fb950; }\n"
@@ -180,7 +165,7 @@ def _diff_state(rel: str, root_s: str) -> tuple[frozenset[int], bool, bool]:
         return frozenset(), False, False
     # Against the WORK TREE, not against HEAD. `render` reads the lines it is about to
     # draw straight off the work tree, so a diff whose right-hand side is HEAD describes a
-    # different text than the one on screen — and says so with a badge. A @SpringBootTest
+    # different text than the one on screen — and says so with a badge. A test
     # written for the review it appears in, every line of it minutes old, rendered under
     # `UNCHANGED`, because the commit had not happened yet. The two halves of one claim
     # have to be read from the same version of the file.
@@ -288,9 +273,8 @@ def srcbar_html(href: str, rel: str, lineref: str = "", badge: str = "") -> str:
     named — a badge that leads makes the reader hold "new file" in mind across the whole
     bar before finding out which file is new.
 
-    The face is the file's **name** and the full path is on hover. A repo-relative Java
-    path spends five segments on module, `src/main/java` and the org package before it
-    reaches the one word that answers "which file is this?", which is the only question
+    The face is the file's **name** and the full path is on hover. A repo-relative path
+    spends its first segments on the service, `src/` and the package before it reaches the one word that answers "which file is this?", which is the only question
     this row exists to answer. A file at the repo root has no path to move, and a tooltip
     repeating the name is a tooltip saying nothing.
 
@@ -382,10 +366,10 @@ def _first_code_line(lines: list[str], start: int, end: int) -> int:
     return i if i <= end else start
 
 
-# The comment styles the page ever snips: `//` (Java/TS/JS), `/* ... */` blocks — the
+# The comment styles the page ever snips: `//` (TS/JS), `/* ... */` blocks — the
 # opener, the closer, and the `* ` continuation lines inside a `/** ... */` doc comment —
 # `#` (Python, and the tags a Gherkin `.feature` line can open with), and `--` (SQL). Wider
-# than `COMMENT_LINE` above on purpose: that one only has to recognise the two braced
+# than `COMMENT_LINE` above on purpose: that one only has to recognise the braced
 # languages `_first_code_line` snaps for, and folding `--` into it would change what a
 # hand-written SQL range snaps to, which nothing has asked for.
 PREVIEW_COMMENT = re.compile(r"^\s*(//|/\*|\*/|\*(?!\S)|#|--)")

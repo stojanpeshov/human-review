@@ -63,24 +63,24 @@ def _logging_aside(part, found, what, root: Path, hits=()) -> str:
 # How many origin lines one entry may pull in. `logextract.py` already caps the walk
 # (three hops per value, six lines per statement); this is the *page's* cap on top of
 # that, and it is deliberately tighter, because the failure here is not a wrong answer,
-# it is a tab. This tab lists every touched Java file, and an entry that grows from
+# it is a tab. This tab lists every touched Python file, and an entry that grows from
 # three lines to twenty to show a chain nobody asked about has made the tab worse in
 # exactly the way the prose it replaced did.
 MAX_ORIGIN_LINES_SHOWN = 4
 
 
 def _logging_ref(h: dict, origins: bool = False) -> str:
-    """The snippet reference for one statement: its own line(s) — `Foo.java:93`, or
-    `Foo.java:93-95` for a call that spans three physical lines, which stays whole.
+    """The snippet reference for one statement: its own line(s) — `foo.py:93`, or
+    `foo.py:93-95` for a call that spans three physical lines, which stays whole.
 
     The listing quotes nothing else (Victor, 20 Oct 2026: "remove all the context, it's
     confusing — leave only the actual line"). The enclosing method's signature, the
-    `Visit visit = …` a value came from and the `— 6 lines not shown` fold between them
+    `visit = …` a value came from and the `— 6 lines not shown` fold between them
     made the reader hunt for the one line the card is about; the argument type chips
     already say what each logged value is, and the bar opens the file for anything more.
 
     `origins=True` still adds the lines the interpolated values were traced back to
-    (`Foo.java:89,93`), capped and nearest-first, for a caller that wants the data flow."""
+    (`foo.py:89,93`), capped and nearest-first, for a caller that wants the data flow."""
     end = h.get("end_line") or h["line"]
     spans = [f'{h["line"]}' if end == h["line"] else f'{h["line"]}-{end}']
     if origins:
@@ -105,10 +105,6 @@ def _logextract():
     sys.modules["logextract"] = mod
     spec.loader.exec_module(mod)
     return mod
-
-
-# Kept for the import surface: upstream read the Java rule's package alternation with it.
-_LOG_PKGS_RE = re.compile(r"\(([a-z][\w\\.]*(?:\|[a-z][\w\\.]*)+)\)")
 
 
 @functools.lru_cache(maxsize=1)
@@ -140,14 +136,14 @@ def logging_libraries_tip() -> str:
 # Type hints, the way IntelliJ draws them
 #
 # Each value a statement logs gets a small grey chip in front of it naming its declared
-# type — `log.debug("Attending vet: {}", [String] vet.getLastName())`. The type is
+# type — `logger.info("Attending vet: %s", [str] vet.last_name)`. The type is
 # `logextract.py`'s (`arg_types`, read off declarations in the repo, None where it could
 # not be); this only puts it on the page. Nothing here asks anyone anything: a value whose
 # type was not resolved simply has no chip.
 #
 # The chip is an empty element whose text is drawn by CSS (`::before { content:
 # attr(data-type) }`). That keeps it out of the line's *text*: a reader who copies the
-# statement copies the Java, not `Integer visit.getId()`, and `code_xref`, which reads
+# statement copies the code, not `int visit.id`, and `code_xref`, which reads
 # every quoted line back as plain text to find the names in it, never sees it either.
 # --------------------------------------------------------------------------- #
 

@@ -174,21 +174,21 @@ def test_a_red_container_carries_its_last_log_line_and_only_the_red_one_is_asked
     assert asked == ["p-bad-1"]
 
 
-SPRING_DEATH = """\
-2026-10-07 ERROR 1 --- [main] o.s.boot.SpringApplication : Application run failed
-org.springframework.beans.factory.BeanCreationException: Error creating bean 'flyway'
-\tat org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:1)
-Caused by: org.flywaydb.core.internal.exception.FlywaySqlException: Unable to obtain connection
-\tat org.flywaydb.core.internal.jdbc.JdbcUtils.openConnection(JdbcUtils.java:59)
-Caused by: org.postgresql.util.PSQLException: FATAL: database "nope" does not exist
-\tat org.postgresql.core.v3.ConnectionFactoryImpl.doConnect(ConnectionFactoryImpl.java:1)
-\t... 28 common frames omitted
+PYTHON_DEATH = """\
+Traceback (most recent call last):
+  File "/app/main.py", line 3, in <module>
+    engine.connect()
+  File "/app/db.py", line 9, in connect
+    raise OperationalError(msg)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.OperationalError: FATAL:  database "nope" does not exist
+waiting
 """
 
 
 @pytest.mark.parametrize("text,expected", [
-    # The deepest cause, not `... 28 common frames omitted`, which is what it printed last.
-    (SPRING_DEATH, 'Caused by: org.postgresql.util.PSQLException: FATAL: database "nope" does not exist'),
+    # The exception, not `waiting`, which is what it printed last, nor a frame above it.
+    (PYTHON_DEATH, 'sqlalchemy.exc.OperationalError: FATAL:  database "nope" does not exist'),
     ("starting\nFATAL - no DATABASE_URL set\nbye\n", "FATAL - no DATABASE_URL set"),
     ("one\ntwo\n", "two"),                      # nothing sounds like a reason: the last line
     ("", ""),

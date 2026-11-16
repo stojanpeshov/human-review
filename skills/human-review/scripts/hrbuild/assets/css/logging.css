@@ -15,7 +15,7 @@
    rounded, muted chip in front of the value, in the code's own monospace, a notch smaller
    than the code, never in the colour of the token it precedes. The text is the element's
    `data-type`, painted by `::before`, so it is not part of the line: copying the statement
-   copies the Java, and nothing that reads the quoted line as text ever sees it. The tint is
+   copies the code, and nothing that reads the quoted line as text ever sees it. The tint is
    the page's own muted grey over whatever the code background is, so one rule serves both
    themes. */
 .typehint::before { content:attr(data-type); }

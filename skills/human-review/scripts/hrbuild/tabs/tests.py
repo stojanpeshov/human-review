@@ -207,7 +207,7 @@ def render_tests(rows, root: Path, flags: bool = True) -> str:
 
 
 def _names_by_file(rows) -> str:
-    """`a.spec.ts: x, y; B.java: z` — the names a count stands for, for its hover."""
+    """`a.spec.ts: x, y; test_b.py: z` — the names a count stands for, for its hover."""
     by: dict[str, list[str]] = {}
     for r in rows:
         by.setdefault(Path(r.get("path") or "?").name, []).append(
@@ -781,48 +781,8 @@ def coverage_join(doc: dict) -> dict:
         for f, ls in r["changedHits"].items():
             run[f].update(ls)
     gaps = {f: sorted(measurable[f] - run[f]) for f in measurable if measurable[f] - run[f]}
-    _rendered_templates(doc, measurable, rows, gaps, unm)
     return {"measurable": measurable, "total": sum(map(len, measurable.values())),
             "rows": rows, "gaps": gaps, "unmeasurable": unm, "quiet": quiet}
-
-
-#: Said of a changed template line no browser test ran, in a component a Karma spec
-#: rendered. Eval run 8 listed owner-list.component.html:23 — the `#ownersError` alert —
-#: under "Changed lines no test runs" while owner-list.component.spec.ts:212 renders it and
-#: asserts its text: Istanbul instruments the component's TypeScript, never its template,
-#: so a unit spec runs every template line and is seen running none. Only a browser run
-#: maps template lines (`v8-join.js`); where it did not reach one, the honest word is
-#: "unseen", not "unrun" — the component's specs are its proxy.
-TEMPLATE_UNSEEN = ("template — its component's unit specs render it, but Karma sees "
-                   "TypeScript only, not which template lines ran")
-
-
-def _rendered_templates(doc: dict, measurable: dict, rows: list[dict], gaps: dict,
-                        unm: list[dict]) -> None:
-    """Move the gap lines of a template whose component a Karma spec ran (`x.html` beside
-    `x.ts`) out of `gaps` into `unm`, proxied by the component lines those specs ran."""
-    karma: dict[str, set] = {}
-    for t in doc.get("tests") or []:
-        if t.get("source") == "karma":
-            for f, ls in (t.get("hits") or {}).items():
-                karma.setdefault(f, set()).update(ls)
-    for f in sorted(gaps):
-        if not f.endswith(".html"):
-            continue
-        ts = f[:-len(".html")] + ".ts"
-        if not karma.get(ts):
-            continue
-        lines = gaps.pop(f)
-        measurable[f] = measurable[f] - set(lines)
-        if not measurable[f]:
-            del measurable[f]
-        proxy = {ts: sorted(karma[ts])}
-        idx = len(unm)
-        unm.append({"file": f, "lines": lines, "reason": TEMPLATE_UNSEEN, "proxy": proxy})
-        for r in rows:
-            if set((r.get("hits") or {}).get(ts, ())) & karma[ts]:
-                r["via"].append(idx)
-        unm[idx]["reached"] = sum(1 for r in rows if idx in r["via"])
 
 
 def model_pairing(frag: str) -> dict:
@@ -936,8 +896,8 @@ def _cov_part(root: Path, file: str, line: int, text: str | None = None,
             "from": start, "html": rendered}
 
 
-#: Which of the card's three kinds a measured test is. A browser run is UI; Karma is a
-#: component in isolation; a backend test is API when it goes through the HTTP layer —
+#: Which of the card's three kinds a measured test is. A browser run is UI; a backend
+#: test is API when it goes through the HTTP layer —
 #: at Ludvig, when it hands a Lambda handler an API Gateway event (`httpMethod`,
 #: `pathParameters`, …) or drives an ASGI/HTTP test client.
 _API_MARKERS = re.compile(r"\b(?:httpMethod|pathParameters|queryStringParameters|requestContext|"
@@ -950,19 +910,14 @@ def _cov_cat(r: dict, root: Path) -> str:
     src = r.get("source") or ""
     if "v8" in src:
         return "e2e"
-    if src == "karma":
-        return "unit"
-    if (r.get("suite") or "").endswith("Cucumber"):
-        return "api"
     file = r.get("file") or ""
     if src == "pytest" and _E2E_DIR.search(file):
         return "e2e"
     if file.endswith(".feature"):
-        # A Gherkin scenario is never one isolated component. With no run to say which
-        # suite took it, its place does: JVM Cucumber under `src/test/` drives the API
-        # (the suite rule above), a feature anywhere else is an end-to-end one (hr-claude-18:
-        # an unmeasured `@wip` scenario of petclinic-test read "Unit").
-        return "api" if "src/test/" in file else "e2e"
+        # A Gherkin scenario is never one isolated component: with no run to say which
+        # suite took it, it is an end-to-end one (hr-claude-18: an unmeasured `@wip`
+        # scenario read "Unit").
+        return "e2e"
     try:
         text = (root / file).read_text(encoding="utf-8")
     except OSError:
@@ -1464,12 +1419,6 @@ REQMAP_CSS = """
   text-decoration:underline dashed 1px;text-underline-offset:3px}
 .reqmap .rm-thead:has(> .rm-cat[data-strength=touched]) .rm-tt{
   text-decoration:underline dotted 1px;text-underline-offset:3px}
-/* The DB-fixture dot (fixtures.js) slides right, into the blank the file column keeps on a
-   `.java` row - the column is as wide as `.feature` - so it sits by the file it is about
-   and the name gets the room (Victor, 19 Oct 2026). Only where the link says `.java`: a
-   longer file name has no blank to slide into (`data-clash`, testchapters.js). */
-.reqmap .rm-thead > .fx-dot:has(+ .rm-tw[data-face=".java"]:not([data-clash])){
-  margin-right:-21px;position:relative;z-index:1}
 .reqmap .rm-ch[data-open=yes] > .rm-chh .rm-chcaret{transform:rotate(90deg)}
 .reqmap .rm-chsub{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* The counts are a grid of four fixed columns, `−`, ✏️, `+` and the chapter's total,

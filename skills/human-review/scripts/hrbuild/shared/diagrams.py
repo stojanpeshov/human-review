@@ -424,46 +424,36 @@ def _source_link(rel: str, root: Path, out_dir: Path | None = None,
 # ── Where a diagram's truth comes from: tested against something, or generated ─────────
 #
 # A card's credential, after its status badge: a ✓ on a green dot and the fewest words —
-# *ArchUnit-tested vs code* when a test reads the diagram file and checks it, *Generated
+# *Tested vs code* when a test reads the diagram file and checks it, *Generated
 # from …* when the file is a generator's output. Read off the repository, never assumed:
 # a diagram nothing tests and nothing generates gets no badge, which is a fact too.
 
 #: Source files that may test or generate a diagram. Docs, configs and the diagram formats
 #: themselves only mention it.
-_PROV_CODE = (".java", ".kt", ".kts", ".groovy", ".scala", ".py", ".sh", ".js", ".mjs",
-              ".ts", ".rb", ".go", ".gradle")
+_PROV_CODE = (".py", ".sh", ".js", ".mjs", ".ts", ".rb", ".go")
 
 #: What a generator (or a test) reads, by the first thing its source names that says so.
-#: Ordered: a script that dumps the schema out of a container also names Maven, and one
-#: that walks the classes also names `.puml`.
+#: Ordered: a script that dumps the schema out of a container also names its migrations,
+#: and one that walks the code also names `.puml`.
 _PROV_SOURCES = (
-    # Before `pom.xml`, which such a generator also names: the graph is Maven's resolved
-    # tree, not the poms as written. The chip says so now that the diagram's own caption,
-    # which did, is gone (Victor, 6 Nov 2026).
-    (re.compile(r"dependency:tree"), "`mvn dependency:tree`"),
-    (re.compile(r"pom\.xml|<modules?>", re.I), "pom.xml"),
     (re.compile(r"genseq|opentelemetry|\btraces?\b", re.I), "traces"),
     (re.compile(r"openapi", re.I), "OpenAPI"),
     # A schema dumped from a database the migrations built: the diagram follows the
     # incremental scripts, not a hand-kept DDL file — say so (Victor, 20 Oct 2026).
     # `\A`: a search retries the lookahead from every character, which on a file naming none
     # of these scanned it once per character: 2 of a page's 6.5 seconds.
-    (re.compile(r"(?s)\A(?=.*(?:flyway|liquibase|db/migration))"
-                r".*(?:information_schema|DatabaseMetaData|pg_dump|\bDB\.sql\b|schema\.sql)",
+    (re.compile(r"(?s)\A(?=.*(?:alembic|db/migration))"
+                r".*(?:information_schema|pg_dump|\bDB\.sql\b|schema\.sql)",
                 re.I), "DB schema built from incremental scripts"),
-    (re.compile(r"information_schema|DatabaseMetaData|pg_dump|\bDB\.sql\b|schema\.sql",
-                re.I), "DB schema"),
-    (re.compile(r"com\.tngtech\.archunit|ClassFileImporter|src/main/java|getDeclaredFields"),
-     "code"),
+    (re.compile(r"information_schema|pg_dump|\bDB\.sql\b|schema\.sql", re.I), "DB schema"),
+    # A script that parses the source: Python's `ast`.
+    (re.compile(r"\bast\.(?:parse|walk)\b"), "code"),
 )
-#: `_PROV_SOURCES`' words that name a command run, not a thing read: *Generated using*.
-_PROV_COMMANDS = ("`mvn dependency:tree`",)
 #: `_PROV_SOURCES`' word as it reads after *Tested vs*, where that differs.
 _TESTED_VS = {"traces": "test traces"}
-_WRITES = re.compile(r"\bwrite\w*\s*\(|newBufferedWriter|FileWriter|FileOutputStream"
-                     r"|open\([^)]*['\"]w|>\s*\"?\$")
-_TEST_PATH = re.compile(r"(^|/)(src/test|tests?|__tests__|spec)/|(Test|Tests|Spec|_test|\.spec"
-                        r"|\.test)\.\w+$|(^|/)test_\w+\.py$")
+_WRITES = re.compile(r"\bwrite\w*\s*\(|open\([^)]*['\"]w|>\s*\"?\$")
+_TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(_test|\.spec|\.test)\.\w+$"
+                        r"|(^|/)test_\w+\.py$")
 
 
 def _prov_source(text: str) -> str:
@@ -506,13 +496,13 @@ def diagram_provenance(rel: str, root: Path, against: str = "") -> str:
     source file that names it and writes something, its own header saying it generates
     preferred; what it reads is named (`_PROV_SOURCES`), else the generator is.
     **Tested** otherwise, when a test names the file in a string literal — it opens it:
-    *ArchUnit-tested vs code* when that test is ArchUnit's, *Tested vs <what>* when not.
+    *Tested vs <what>*, what it reads (`_PROV_SOURCES`), else *code*.
 
     `against` is what the project declares the test checks the drawing against
-    (`tested_against` in human-review.json, e.g. *Java Domain Model*). It goes in the
+    (`tested_against` in human-review.json, e.g. *SQLAlchemy models*). It goes in the
     hover, with the test's name — the badge face keeps its few words. It used to be a
-    sentence of its own under a draw.io card's header, "Unit-tested against the Java
-    Domain Model.", a whole line for what this badge already claims (Victor, 20 Oct 2026).
+    sentence of its own under a draw.io card's header, "Unit-tested against the …", a
+    whole line for what this badge already claims (Victor, 20 Oct 2026).
     Declared but with no test found, the badge still says so, unlinked: the declaration
     is the only carrier of that fact left on the card."""
     if not rel:
@@ -527,29 +517,26 @@ def diagram_provenance(rel: str, root: Path, against: str = "") -> str:
     mentions = _mentions(root, rel)
     if "generated" in Path(rel).parts[:-1]:
         return generated_badge(rel, root, mentions)
-    # The file named in a string literal, in any of the quotes a test language uses: Java's
-    # "…", and the single quotes and backticks of a JS guardrail (`packages-arch.test.mjs`'s
+    # The file named in a string literal, in any of the quotes a test language uses: "…",
+    # and the single quotes and backticks of a JS guardrail (`packages-arch.test.mjs`'s
     # `'docs/frontend-packages.puml'`, which a double-quote-only match missed).
     literal = re.compile("|".join(f"{q}[^{q}\\n]*{re.escape(name)}{q}" for q in "\"'`"))
     tests = [(p, t) for p, t in mentions if _TEST_PATH.search(p) and literal.search(t)]
     if not tests:
         return prov_badge("Unit-tested", tested_tip("A unit test")) if against else ""
-    archunit = [(p, t) for p, t in tests if "com.tngtech.archunit" in t]
-    path, text = (archunit or tests)[0]
+    path, text = tests[0]
     href = f"vscode://file/{(Path(root) / path).resolve()}:1:1"
-    # `ConceptualModelDiagramTest`, but `packages-arch.test.mjs`: a stem with a dot left in
+    # `test_conceptual_model`, but `packages-arch.test.mjs`: a stem with a dot left in
     # it is no name a reader would search for.
     stem = Path(path).stem
     test = stem if "." not in stem else Path(path).name
-    source = "code" if archunit else (_prov_source(text) or "code")
+    source = _prov_source(text) or "code"
     # A drawing is checked against what the tests recorded: bare, *traces* could be anyone's
     # (Victor, 6 Nov 2026). *Generated from traces* keeps the short word.
     source = _TESTED_VS.get(source, source)
     # Undeclared, the hover still says which test and what a mismatch costs — what it is
     # checked against is then the badge's own word (*code*, *traces*).
     tip = tested_tip(test, "" if against else source)
-    if archunit:
-        return prov_badge("ArchUnit-tested vs code", tip, href)
     return prov_badge(f"Tested vs {source}", tip, href)
 
 
@@ -573,8 +560,7 @@ def generated_badge(rel: str, root: Path, mentions: list | None = None,
     path, _ = writers[0]
     source = source or next((s for s in (_prov_source(t) for _, t in writers) if s), "")
     href = f"vscode://file/{(Path(root) / path).resolve()}:1:1"
-    how = "using" if source in _PROV_COMMANDS else "from"
-    return prov_badge(f"Generated {how} {source}" if source
+    return prov_badge(f"Generated from {source}" if source
                       else f"Generated by {Path(path).name}",
                       tip.format(test=Path(path).name) if tip
                       else f"Written by {Path(path).name}", href)
@@ -634,8 +620,8 @@ def api_spec_provenance(band: str, root: Path, out_dir: Path | None = None) -> s
     stamp = (f'<span class="apiver" data-tip="The version in {html.escape(Path(spec).name)}'
              f'\'s info block">v{html.escape(ver)}</span>') if ver else ""
     badge = generated_badge(spec, root, source="code",
-                            tip="{test} writes this contract from the Java controllers and "
-                                "DTOs, so it is the code's, never hand-edited")
+                            tip="{test} writes this contract from the handlers and their "
+                                "models, so it is the code's, never hand-edited")
     # The name, the path on the hover: a diagram card's file link, IDE-following tip and all.
     prov = (f'{badge}{_source_link(spec, root, out_dir, face=Path(spec).name)}'
             if badge else "")
@@ -845,7 +831,7 @@ def render_diagrams(spec, root: Path, out_dir: Path, rows=None, bare: str = "") 
         return '<p class="sub">No PlantUML diagram changed on this branch.</p>'
     notes = spec.get("notes", {})
     # A card's heading, when the block it came from had a name for it (a `puml` context
-    # card the branch changed keeps its "Java packages", not the file's `packages`).
+    # card the branch changed keeps its "Frontend folders", not the file's `frontend-packages`).
     labels = spec.get("labels") or {}
     order = {"structural": 0, "sequence": 1}
     # An explicit `only` is a running order, not just a filter: an author who writes
@@ -864,7 +850,7 @@ def render_diagrams(spec, root: Path, out_dir: Path, rows=None, bare: str = "") 
             body, toggles = _diagram_views(r, manifest.parent, svg_rel, root, bar=not bare)
         else:
             body, toggles = _why_not_drawn(r, manifest.parent), False
-        # A package's or a Maven module's box opens its folder — every view of it, the
+        # A package's box opens its folder — every view of it, the
         # delta and the whole picture alike. A sequence's boxes are participants, not code.
         if r.get("kind") != "sequence":
             body = link_folders(body, r["source"], root)

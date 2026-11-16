@@ -42,15 +42,13 @@ TEST_CATS = {
 #: runner IS the file: `.feature` is Gherkin because Gherkin is what a `.feature` file
 #: contains, and no diagram is needed to know it. Longest suffix first, so `.spec.ts` is
 #: not read as a bare `.ts`. The Playwright spec says `TypeScript`, the language, to sit
-#: beside `Gherkin` and `JUnit` as the thing a reader would have to read, not the tool
+#: beside `Gherkin` and `pytest` as the thing a reader would have to read, not the tool
 #: that runs it; the tool stays in the hover.
 TEST_RUNNERS = (
     (".feature", "Gherkin", "a Cucumber scenario"),
     (".spec.ts", "TypeScript", "a Playwright spec, in TypeScript"),
     (".spec.tsx", "TypeScript", "a Playwright spec, in TypeScript"),
     (".spec.js", "TypeScript", "a Playwright spec, in TypeScript"),
-    (".java", "JUnit", "a JUnit test"),
-    (".kt", "JUnit", "a JUnit test"),
     (".py", "pytest", "a pytest test"),
 )
 
@@ -70,7 +68,7 @@ SEQ_ARROW = re.compile(r'^(?P<from>"[^"]*"|[^\s"<>\[\]-]+)\s*-+>+\s*'
                        r'(?P<to>"[^"]*"|[^\s"<>:\[\]-]+)\s*:')
 
 #: What a driver lifeline is called when the run went through the screens. The generators
-#: name their own driver — Playwright's is `Browser`, a `@SpringBootTest`'s is `Client` —
+#: name their own driver — Playwright's is `Browser`, the pytest plugin's is `Test` —
 #: and this page already writes that convention down in `c2-from-sequence.py`. Anything
 #: not on this list is a synthetic client calling the contract directly, which is `api`.
 SEQ_UI_DRIVERS = re.compile(r"\b(browser|ui|frontend|front-end|chrome|playwright|page)\b",
@@ -84,8 +82,8 @@ def _pair_cat(puml_rel: str, root: Path, authored: str | None = None) -> str | N
     itself is derived: a `.spec.ts` is a Playwright run in one module and a component test
     in the next, and the page must not settle that by guessing at a path. The diagram is a
     record of what the run actually did, and its first lifeline is the end the test was
-    driving from — `Browser` for a run through the screens, `Client` for a `@SpringBootTest`
-    calling the contract in the same JVM. That is the very distinction the tab's own tip
+    driving from — `Browser` for a run through the screens, a synthetic client for a test
+    calling the contract directly. That is the very distinction the tab's own tip
     draws, so reading it off the picture keeps the badge and the tip from ever disagreeing.
 
     One lifeline is `unit`: a test that made no call anyone else could observe is a test of
@@ -169,7 +167,7 @@ def _cat_chip(cat: str | None, test_rel: str = "") -> str:
 
 def _lang_label(test_rel: str, root: Path | None = None, line: int | None = None,
                 mark: str = "", lead: str = "", views: str = "", puml: str = "") -> str:
-    """The test's file name — `OwnerListTest.java`, `owner-search.feature`,
+    """The test's file name — `test_owners.py`, `owner-search.feature`,
     `add-visit.spec.ts` — at the row's right end, as the way to the code, with the glyph for
     what the branch did to it hard right, so those marks line up down the tab.
 
@@ -206,41 +204,6 @@ def _lang_label(test_rel: str, root: Path | None = None, line: int | None = None
                 f':{at}:1" data-tip="Open in VS Code: {html.escape(name, quote=True)}'
                 f' (line {at})">{face}</a>')
     return f'<span class="seqlang">{views}{lead}{face}{tail}{mark}</span>'
-
-
-#: A JUnit scenario's title as the generator writes it: `AddVisitApiTest: adds a visit…`.
-#: Only an identifier before the colon counts — a Gherkin or Playwright title is prose, and
-#: a colon in prose is not a class.
-_CLASS_TITLE = re.compile(r"^([A-Za-z_$][\w$]*):\s+(\S.*)$")
-
-
-def _pair_title(titles: list[str]) -> str:
-    """The row's sentence: the test it runs, without its class, read as words.
-
-    The class is the file already named at the row's right end, so it is dropped (Victor,
-    20 Oct 2026: "I can only see the class name in the right hand, so ditch it"), and a bare
-    method name is spelled the way `PrettyTestNames` spells one — `create_withoutVet()`
-    reads "create without vet", like its neighbour's `adds a visit to an existing pet`.
-    Prose titles (E2E scenarios) are left as they were; a colon in prose is not a class."""
-    split = [_CLASS_TITLE.match(t) for t in titles]
-    if not titles or not all(split):
-        return " · ".join(html.escape(t) for t in titles)
-    return ('<span class="seqtitle">'
-            + " · ".join(html.escape(_test_words(m[2])) for m in split) + '</span>')
-
-
-#: A method name as JUnit's standard generator prints it: `create_withoutVet()`.
-_METHOD_NAME = re.compile(r"^[A-Za-z_$][\w$]*(?:\(\))?$")
-
-
-def _test_words(name: str) -> str:
-    """`create_withoutVet()` → `create without vet`: what `PrettyTestNames` (ReplaceUnderscores,
-    then the capitals lowered behind a space) would have named it. Anything not a bare
-    method name — a `@DisplayName`, a sentence already — is kept as written."""
-    if not _METHOD_NAME.match(name):
-        return name
-    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name.removesuffix("()").replace("_", " "))
-    return " ".join(words.split()).lower()
 
 
 #: The glyph `extract-snippet.py` puts on a quoted block's source bar for what the branch
@@ -282,9 +245,8 @@ def _slug(text: str) -> str:
 def picked_for(test_rel: str, scenarios, selection: dict | None) -> dict | None:
     """The selection entry this pair's picture was traced for, if it was one.
 
-    By line, or by name: a JVM picture is titled with JUnit's display name
-    (`defaultRequest_returnsFirstTen…()`), which begins with the slug of the method the
-    manifest names."""
+    By line, or by name: a picture's title begins with the slug of the test the manifest
+    names."""
     for t in (selection or {}).get("picked") or []:
         if not isinstance(t, dict) or t.get("path") != test_rel:
             continue
@@ -328,7 +290,7 @@ def _why_chip(kind: str | None, also: str | None = None, via: tuple[str, ...] = 
 def ledger_status(test_rel: str, scenarios, tests) -> str | None:
     """`added` / `modified` when the ledger (`test-changes.json`) says the branch wrote or
     edited one of the scenarios this picture draws — matched by line, or by name the way
-    `picked_for` matches a JUnit display name."""
+    `picked_for` matches a title."""
     found = None
     for t in tests or []:
         if not isinstance(t, dict) or t.get("path") != test_rel:
@@ -355,32 +317,18 @@ def _branch_changed(root: str, base: str) -> frozenset[str]:
 
 
 _TS_IMPORT = re.compile(r"""(?:\bfrom\s+|\bimport\s+|\brequire\()['"](\.{1,2}/[^'"]+)['"]""")
-_JAVA_IMPORT = re.compile(r"^\s*import\s+(static\s+)?([\w.]+)\s*;", re.M)
 
 
 def _direct_imports(test_rel: str, root: Path) -> list[str]:
     """The repo files `test_rel` imports itself — one level, never what those import.
 
     TypeScript/JavaScript: the relative module specifiers, resolved the way Node does.
-    Java: each imported class looked up under the test module's `src/test/java` and
-    `src/main/java`. A Gherkin file imports nothing."""
+    A Gherkin file imports nothing."""
     try:
         text = (root / test_rel).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
     found: list[str] = []
-    if test_rel.endswith(".java"):
-        module = test_rel.split("/src/", 1)[0] + "/src" if "/src/" in test_rel else "src"
-        for static, name in _JAVA_IMPORT.findall(text):
-            parts = name.split(".")
-            if static or parts[-1] == "*":
-                parts = parts[:-1]
-            for tree in ("test/java", "main/java"):
-                rel = f"{module}/{tree}/{'/'.join(parts)}.java"
-                if (root / rel).is_file():
-                    found.append(rel)
-                    break
-        return found
     if not re.search(r"\.(?:[cm]?[jt]sx?)$", test_rel):
         return found
     here = Path(test_rel).parent
@@ -416,7 +364,7 @@ def _scenarios_drawn(puml_rel: str, test_rel: str, root: Path) -> list[tuple[int
 
     Only the test's own handles count, and only on a `title` or `==` line. The same
     `src://` scheme is on every class and endpoint the diagram names, and a line number
-    from `OwnerRepository.java` resolved against a feature file would point at nothing."""
+    from `owner_repository.py` resolved against a feature file would point at nothing."""
     try:
         text = genseq_file(puml_rel, root).read_text(encoding="utf-8")
     except OSError:
@@ -437,7 +385,7 @@ def _scenarios_drawn(puml_rel: str, test_rel: str, root: Path) -> list[tuple[int
 
 def _decl_names(lines: list[str], decl: int, kind: str) -> set[str]:
     """The names (squashed) of the scenario declared on 1-based line `decl`, if one is:
-    the Gherkin title, the Playwright title, the Java method and its `@DisplayName`."""
+    the Gherkin title or the Playwright title."""
     i = decl - 1
     if not 0 <= i < len(lines):
         return set()
@@ -447,14 +395,6 @@ def _decl_names(lines: list[str], decl: int, kind: str) -> set[str]:
     if kind == "ts":
         m = _TS_DECL.match(lines[i]) and _STRINGS.search(" ".join(lines[i:i + 3]))
         return {_squash(m.group(0)[1:-1])} if m else set()
-    if kind == "java" and _JAVA_DECL.match(lines[i]) and not re.match(
-            r"\s*(?:return|new|throw|else)\b", lines[i]):
-        names = {_squash(m[1]) for m in re.finditer(r"(\w+)\s*\(", lines[i])}
-        for j in range(max(0, i - 6), i):
-            d = re.search(r'@DisplayName\(\s*"((?:\\.|[^"\\])*)"', lines[j])
-            if d:
-                names.add(_squash(d[1]))
-        return names
     return set()
 
 
@@ -516,7 +456,8 @@ def _folded_pair(puml_rel: str, test_rel: str, pieces: list[str],
     card's New/Old buttons and its `.puml` link, on the same row (see `_lang_label`).
     """
     titles = [t for _, t in scenarios if t]
-    name = _pair_title(titles) if titles else html.escape(test_rel.rsplit("/", 1)[-1])
+    name = (" · ".join(html.escape(t) for t in titles) if titles
+            else html.escape(test_rel.rsplit("/", 1)[-1]))
     lines = [ln for ln, _ in scenarios if ln]
     mark = next((m.group(0) for q in quoted for m in [FILEMARK.search(q)] if m), "")
     label = _lang_label(test_rel, root, min(lines) if lines else None, mark, lead=fixture,
@@ -682,30 +623,27 @@ def _unquoted_note(test_rel: str, root: Path) -> str:
 #
 # Which test to quote beside which picture used to be the content file's `snippets`, typed
 # by the model that wrote the review. Eval run 5 (3 Oct 2026) copied them from the reference
-# PR: `add-visit.spec.ts:31-43`, `AddVisitApiTest.java:73-98` — line ranges of another branch,
+# PR: `add-visit.spec.ts:31-43`, `add-visit-api.spec.ts:73-98` — line ranges of another branch,
 # quoting tests by position. Nothing about that choice needs a model. A picture names the
 # scenario that drew it (`title [[src://<test>:<line> …]]`), and a test asks for a picture with
 # a tag. So the build reads both: every scenario a diagram names, and every scenario tagged
 # for tracing that no diagram names, each quoted from its tag to its last line.
 
-#: A test asking for a sequence: the Gherkin tag, the Java annotation, the Playwright tag
+#: A test asking for a sequence: the Gherkin tag or the Playwright tag
 #: (`{tag: [GENERATE_SEQUENCE_TAG]}` or the literal). Read on a line, then placed on the
 #: scenario it belongs to — a line that belongs to no scenario (the constant's own
-#: declaration, an import, a Javadoc) is dropped there, not here.
-GENSEQ_TAG = re.compile(r"^\s*@(?:generate_sequence|GenerateSequence)\b"
+#: declaration, an import, a comment) is dropped there, not here.
+GENSEQ_TAG = re.compile(r"^\s*@generate_sequence\b"
                         r"|GENERATE_SEQUENCE_TAG|[\"']@generate_sequence[\"']")
 _FEATURE_DECL = re.compile(r"^\s*(?:Scenario(?: Outline| Template)?|Example)\s*:")
 _FEATURE_STOP = re.compile(r"^\s*(?:@|Scenario|Example\s*:|Rule\s*:|Background\s*:|Feature\s*:)")
 _TS_DECL = re.compile(r"^\s*(?:test|it)(?:\.\w+)?\s*\(")
-_JAVA_DECL = re.compile(r"^\s*(?:(?:public|protected|private|static|final|abstract|"
-                        r"synchronized)\s+)*[\w<>\[\],.? ]+\s+\w+\s*\(")
 _STRINGS = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`')
 
 
 def _test_kind(rel: str) -> str:
     low = rel.lower()
     return ("feature" if low.endswith(".feature")
-            else "java" if low.endswith((".java", ".kt"))
             else "ts" if low.endswith((".ts", ".tsx", ".js", ".mjs")) else "")
 
 
@@ -713,9 +651,8 @@ def scenario_span(lines: list[str], decl: int, kind: str) -> tuple[int, int]:
     """1-based `(first, last)` of the scenario declared on line `decl`, from its tag.
 
     From its tag because the tag is why the picture exists: a quote opening below
-    `@generate_sequence` or `@GenerateSequence` quotes a test that looks untagged. A Gherkin
-    scenario ends before the next scenario, tag or rule; a Java method or a Playwright
-    `test(…)` where its brackets close — counted over parentheses and braces together, so
+    `@generate_sequence` quotes a test that looks untagged. A Gherkin scenario ends before
+    the next scenario, tag or rule; a Playwright `test(…)` where its brackets close — counted over parentheses and braces together, so
     a `{tag: […]}` options object on the second line does not end the test early."""
     i = decl - 1
     lo = i
@@ -752,15 +689,6 @@ def _tagged_decl(lines: list[str], at: int, kind: str) -> int | None:
             if lines[j].strip() and not lines[j].strip().startswith(("@", "#")):
                 return None
         return None
-    if kind == "java":
-        for j in range(at + 1, min(len(lines), at + 12)):
-            t = lines[j].strip()
-            if not t or t.startswith(("@", "//", "/*", "*")):
-                continue
-            if re.search(r"\b(?:class|interface|record|enum)\b", t):
-                return None            # on the class: every test in it, which is no scenario
-            return j + 1 if _JAVA_DECL.match(lines[j]) else None
-        return None
     if kind == "ts":
         for j in range(at, max(-1, at - 5), -1):
             if _TS_DECL.match(lines[j]):
@@ -772,7 +700,7 @@ def tagged_scenarios(root: Path) -> dict[str, list[int]]:
     """`{test: [declaration line, …]}` of every scenario tagged for tracing in the index."""
     found: dict[str, list[int]] = {}
     got = _git(root, "grep", "-n", "-I", "-E",
-               "@generate_sequence|@GenerateSequence|GENERATE_SEQUENCE_TAG") or ""
+               "@generate_sequence|GENERATE_SEQUENCE_TAG") or ""
     hits: dict[str, list[int]] = {}
     for row in got.splitlines():
         rel, _, rest = row.partition(":")
@@ -1099,7 +1027,7 @@ def render_testpairs(block, dspec, manifest_rows, root: Path, out_dir: Path,
     # A diagram the branch DELETED has no picture to pair with a test, and a frame
     # titled by the file it used to be drawn from is the worst of both: it reads as a
     # test, on a tab whose frames ARE the list of tests. It happens whenever a test
-    # loses its `@generate_sequence` / `@GenerateSequence` — a fact about the source,
+    # loses its `@generate_sequence` — a fact about the source,
     # visible where the source is quoted rather than as an empty exhibit here.
     rows = [r for r in select_rows(manifest_rows, block)
             if r["kind"] == "sequence" and r.get("status") != "deleted"]
@@ -1123,11 +1051,10 @@ def render_testpairs(block, dspec, manifest_rows, root: Path, out_dir: Path,
                           "pair": pair_anchor(puml_rel), "title": title})
 
     # The DB fixture each test starts from: the Tests tab's dot, from the same verdicts
-    # (`shared/fixtures.py`), with its words — the fixture the test declares, or the seed its
-    # Flyway config loads; none when it starts on an empty database. Read once, on the
-    # first pair. An id is `<test>:<line>`; the diagram's handle names the line it was
-    # drawn from, which for a JUnit test may sit below the annotation the verdict is keyed
-    # on, so a key only annotations or blank lines away still counts. Nothing is guessed
+    # (`shared/fixtures.py`), with its words — the fixture the test declares; none when it
+    # starts on an empty database. Read once, on the first pair. An id is `<test>:<line>`;
+    # the diagram's handle names the line it was drawn from, which may sit below the tag
+    # the verdict is keyed on, so a key only annotations or blank lines away still counts. Nothing is guessed
     # past that: a test the verdicts do not name gets no dot.
     fx: dict = {}
 
@@ -1377,7 +1304,7 @@ def lost_note_html(entry: dict) -> str:
     Neutral about the cause on purpose — the trace cannot tell a call the code stopped
     making from one the traced stack never reached — except when a whole participant is
     gone, which is far more often the stack (a service not started, or not reachable from
-    the JVM that ran the test) than a branch deleting a system from its own picture."""
+    the process that ran the test) than a branch deleting a system from its own picture."""
     parts = [str(x) for x in entry.get("participants") or []]
     calls = [str(x) for x in entry.get("calls") or []]
     said = []
@@ -1388,7 +1315,7 @@ def lost_note_html(entry: dict) -> str:
         said.append(f"{len(calls)} call{'s' if len(calls) != 1 else ''}: "
                     + "; ".join(f"<code>{html.escape(x)}</code>" for x in calls))
     cause = ("A whole participant missing is usually the traced stack — a service that was "
-             "not started, or not reachable from the JVM that ran the test — rather than the "
+             "not started, or not reachable from the process that ran the test — rather than the "
              "code." if parts else
              "Either the code under review stopped making these calls, or the traced stack "
              "did not reach them; the trace alone cannot tell which.")
@@ -1472,14 +1399,14 @@ def sequence_verdict_html(out_dir: Path) -> str:
             + " — flagged on each picture below. Do not read a missing call as the code "
               "no longer making it until the trace is re-run with the whole stack "
               "reachable.</p>")
-    # The plain cause of each command that found nothing, said in the open: Maven prints a
-    # tag filter that matched nothing as `[ERROR] … MojoFailureException`, and the fold
-    # below would otherwise be a red dump under a reassuring headline (eval run 6).
+    # The plain cause of each command that found nothing, said in the open: a runner
+    # prints a filter that matched nothing as errors, and the fold below would otherwise
+    # be a red dump under a reassuring headline (eval run 6).
     for r in doc.get("runs") or []:
         if isinstance(r, dict) and r.get("outcome") == "no-tests" and r.get("detail"):
             parts.append(f'<p class="rb-sub">The cause, in plain words: '
-                         f'{html.escape(str(r["detail"]))}. The <code>[ERROR]</code> lines '
-                         'in the fold below are that, not a broken test.</p>')
+                         f'{html.escape(str(r["detail"]))}. The errors in the fold below '
+                         'are that, not a broken test.</p>')
     missing = [m for m in doc.get("missing") or [] if isinstance(m, str)]
     if missing:
         parts.append("<p class=\"rb-sub\">Nothing answers at: "

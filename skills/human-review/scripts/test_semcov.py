@@ -372,9 +372,10 @@ def test_a_gherkin_scenario_is_read_with_the_step_definitions_under_it(tmp_path)
         "Then('the first {int} owner(s) by city descending are listed', async function (n) {\n"
         "  await expectOwnersListedInOrder(this, byCityDescending.slice(0, n));\n});\n",
         encoding="utf-8")
-    (root / "e2e" / "Steps.java").write_text(
-        "class Steps {\n    @Then(\"the response status is {int}\")\n"
-        "    public void status(int s) {\n        assertThat(code).isEqualTo(s);\n    }\n}\n",
+    (root / "e2e" / "steps.py").write_text(
+        "from pytest_bdd import parsers, then\n"
+        "@then(parsers.parse(\"the response status is {status:d}\"))\n"
+        "def status(response, status):\n    assert response.status_code == status\n",
         encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
@@ -389,14 +390,13 @@ def test_a_gherkin_scenario_is_read_with_the_step_definitions_under_it(tmp_path)
     assert "expectOwnersListedInOrder(this, byCityDescending.slice(0, n));" in text
     assert text.count("# step: And I sort owners by") == 1, "a definition used twice, once"
     assert S.terms("descending") <= d["asserts"], "the step's expect counts as an assertion"
-    # Java annotations reach the method under them.
     rx = S.cucumber_regex("the response status is {int}")
     assert rx.fullmatch("the response status is 200") and not rx.fullmatch("the status is 2")
     assert S.cucumber_regex("the page has {int} owner(s)").fullmatch("the page has 1 owner")
     assert S.cucumber_regex("I click/press {string}").fullmatch('I press "Go"')
     assert S.cucumber_regex("^I wait (\\d+)s$").fullmatch("I wait 5s")
     defs = S.step_definitions(root, "e2e/x.feature")
-    assert ("e2e/Steps.java", 2) in {(f, n) for _, f, n in defs}
+    assert ("e2e/steps.py", 2) in {(f, n) for _, f, n in defs}, "a pytest-bdd decorator"
 
 
 def test_a_test_the_branch_wrote_is_offered_to_the_sentences_it_scores_best_on():
@@ -589,7 +589,6 @@ def test_a_switched_off_test_is_listed_but_marked_never_runs_and_kind_e2e(tmp_pa
     assert row["cat"] == "e2e", "a scenario beside a measured E2E feature is E2E"
     cat = S._tests_tab()._cov_cat
     assert cat({"file": "petclinic-test/src/lone.feature"}, root) == "e2e", "even alone"
-    assert cat({"file": "backend/src/test/resources/features/o.feature"}, root) == "api"
     assert not any(r.get("off") for r in rows if r is not row), "a measured test ran"
     g = S.gather(S._spec(review), review, root)
     page = S.render(g["ticket"], g["blocks"], g["rows"],

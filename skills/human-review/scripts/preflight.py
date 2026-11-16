@@ -89,7 +89,7 @@ def push_failure(stderr: str) -> str:
 
 
 #: A workflow "named like CI" — matched as a whole word in the workflow's name or file stem,
-#: so `ci.yml`, `CI`, `Java CI with Maven` and `build.yml` qualify and `Skill CLIs` does not.
+#: so `ci.yml`, `CI`, `Python CI` and `build.yml` qualify and `Skill CLIs` does not.
 CI_LIKE = re.compile(r"(?<![a-z0-9])(ci|build)(?![a-z0-9])", re.I)
 #: …unless it is plainly a deployment. `pages-build-deployment` has "build" in it and proves
 #: nothing about the application, which is the exact confusion this gate exists to prevent.
@@ -279,8 +279,8 @@ def sonar_steps(jobs: list) -> tuple[dict | None, dict | None]:
 
 
 def sonar_project(root: Path = Path(".")) -> tuple[str | None, str]:
-    """`(projectKey, host)` — from `sonar-project.properties`, else the pom's
-    `<sonar.projectKey>`, else a `-Dsonar.projectKey=` in a workflow. SonarCloud unless
+    """`(projectKey, host)` — from `sonar-project.properties`, else a
+    `-Dsonar.projectKey=` in a workflow. SonarCloud unless
     `sonar.host.url` says otherwise."""
     key, host = None, "https://sonarcloud.io"
     try:
@@ -294,15 +294,6 @@ def sonar_project(root: Path = Path(".")) -> tuple[str | None, str]:
             key = v
         elif k == "sonar.host.url" and v:
             host = v.rstrip("/")
-    if not key:
-        for pom in [root / "pom.xml", *sorted(root.glob("*/pom.xml"))]:
-            try:
-                m = re.search(r"<sonar\.projectKey>\s*([^<\s]+)\s*</", pom.read_text("utf-8"))
-            except OSError:
-                continue
-            if m:
-                key = m.group(1)
-                break
     if not key:
         for wf in sorted((root / ".github" / "workflows").glob("*.y*ml")):
             try:

@@ -1,18 +1,17 @@
-"""The folder behind a box: a Java package's directory, a Maven module's.
+"""The folder behind a box: a Python package's directory, a frontend folder.
 
-The Structure tab draws the code's shape — `packages.puml`'s boxes are packages, the
-frontend's are folders named by path (`<<src/app/owners>>`), the module graph's are Maven
-modules — and a reader looking at `..mcp` wants to see what is
-in it. So every such box carries the folder it stands for, relative to the checkout
-(`data-folder`), and a link to that folder on github.com at the reviewed commit. Served,
-`FOLDERS_JS` turns the click into "reveal it in the VS Code window that has this
-checkout" (`serve-review.py`'s `/__reveal_folder__`); off disk the link is all there is.
+The Structure tab draws the code's shape — `Packages.puml`'s boxes are the service's Python
+packages, each naming its folder (`<<src/core>>`, written by `structure-diagrams.py`), and a
+frontend's are folders named the same way (`<<src/app/owners>>`) — and a reader looking at
+`src.core` wants to see what is in it. So every such box carries the folder it stands for,
+relative to the checkout (`data-folder`), and a link to that folder on the forge at the
+reviewed commit. Served, `FOLDERS_JS` turns the click into "reveal it in the VS Code window
+that has this checkout" (`serve-review.py`'s `/__reveal_folder__`); off disk the link is all
+there is.
 
-Nothing here knows petclinic. The package root is not configured: a box's stereotype is an
-ArchUnit package pattern (`..rest.dto`), and the root is whichever package every pattern
-in the diagram sits under — read off the tracked sources of the module the `.puml` lives
-in. A module is the directory of the tracked `pom.xml` whose own `artifactId` is the box's
-name. A box neither explains gets no link, rather than a guessed one.
+Nothing here knows a project. A box's stereotype is a path, relative to the module the
+`.puml` lives in, and a box whose stereotype names no folder of the checkout gets no link,
+rather than a guessed one.
 """
 from __future__ import annotations
 
@@ -21,8 +20,6 @@ import hashlib
 import html
 import re
 import urllib.parse
-import xml.etree.ElementTree as ET
-from collections import Counter
 from pathlib import Path, PurePosixPath
 
 from .changes import changed_files, files_pop
@@ -44,7 +41,8 @@ _STEREO = re.compile(r'<<\s*([^>]+?)\s*>>')
 #: and the name. Nested groups or an `<a>` already inside mean somebody else links it.
 _ENTITY = re.compile(r'(<g class="entity"[^>]*?data-qualified-name="(?P<q>[^"]*)"[^>]*)>'
                      r'(?P<inner>.*?)</g>', re.S)
-_SOURCE_DIR = re.compile(r'^(?P<src>(?:.*/)?src/main/(?:java|kotlin))/(?P<pkg>.+)$')
+#: A stereotype that reads as a relative folder: `src`, `src/core`, `lambdas/consumers`.
+_FOLDER = re.compile(r'^[\w\-]+(?:/[\w.\-]+)*/?$')
 
 
 def _ls_files(root: Path, *spec: str) -> list[str]:
@@ -72,118 +70,29 @@ def puml_boxes(text: str) -> list[dict]:
 
 
 def _module_dir(rel: str, root: Path) -> str:
-    """The build module a diagram belongs to: its nearest ancestor with a build file."""
+    """The module a diagram belongs to: its nearest ancestor with a `package.json` (a
+    frontend's folders are spelled from there), else the checkout."""
     for parent in PurePosixPath(rel).parents:
-        d = root / parent
-        if any((d / f).is_file() for f in ("pom.xml", "build.gradle", "build.gradle.kts",
-                                           "package.json")):
+        if (root / parent / "package.json").is_file():
             return "" if str(parent) == "." else str(parent)
     return ""
 
 
-@functools.lru_cache(maxsize=None)
-def _packages(root: Path, module: str) -> dict[str, list[str]]:
-    """Dotted package → the directories (repo-relative) that hold it, from tracked sources."""
-    found: dict[str, list[str]] = {}
-    for path in _ls_files(root, module or "."):
-        if not path.endswith((".java", ".kt")):
-            continue
-        m = _SOURCE_DIR.match(str(PurePosixPath(path).parent))
-        if not m:
-            continue
-        parts = m["pkg"].split("/")
-        for i in range(1, len(parts) + 1):
-            dotted = ".".join(parts[:i])
-            where = f'{m["src"]}/{"/".join(parts[:i])}'
-            if where not in found.setdefault(dotted, []):
-                found[dotted].append(where)
-    return found
-
-
-def _pattern(stereotype: str) -> tuple[str, bool] | None:
-    """An ArchUnit package identifier as `(package, relative)`: `..rest.dto` is any
-    package ending in `rest.dto`, `com.acme.rest` that package exactly. A trailing `..`
-    (and its subpackages) names the same top folder. Wildcards and alternations name
-    no one folder, so they get none."""
-    s = stereotype.strip()
-    if not s or re.search(r"[*()\[\]|\s]", s):
-        return None
-    relative = s.startswith("..")
-    s = s.strip(".")
-    return (s, relative) if s and ".." not in s else None
-
-
 def package_folders(rel: str, root: Path) -> dict[str, str]:
-    """Box name → the folder of the package its stereotype names, for one `.puml`."""
+    """Box name → the folder its stereotype names, for one `.puml`: a path relative to
+    the module the diagram sits in (`<<src/core>>`), kept only when that folder exists."""
     src = root / rel
     if not src.is_file():
         return {}
-    wanted, paths = {}, {}
+    out = {}
     module = _module_dir(rel, root)
     for box in puml_boxes(src.read_text(encoding="utf-8", errors="replace")):
         st = box["stereotype"]
-        # A folder spelled as a path, relative to the module (`<<src/app/owners>>`): how a
-        # language without packages — the Angular frontend — names its parts.
-        if st and "/" in st and not re.search(r"[*\s]", st):
-            folder = str(PurePosixPath(module or ".") / st.strip("/"))
-            if (root / folder).is_dir():
-                paths[box["name"]] = folder
+        if not st or not _FOLDER.match(st) or ".." in st.split("/"):
             continue
-        p = st and _pattern(st)
-        if p:
-            wanted[box["name"]] = p
-    if not wanted:
-        return paths
-    pkgs = _packages(root, module)
-    # For each box, every package its pattern could mean, keyed by the root it implies.
-    options: dict[str, dict[str, str]] = {}
-    for name, (pkg, relative) in wanted.items():
-        hits = {}
-        for dotted, dirs in pkgs.items():
-            if dotted == pkg:
-                hits[""] = dirs[0]
-            elif relative and dotted.endswith("." + pkg):
-                hits[dotted[: -len(pkg) - 1]] = dirs[0]
-        options[name] = hits
-    # The root package is the one most boxes agree on — `victor.training.petclinic` for
-    # all nine of petclinic's — the shallowest on a tie. A box that does not fit it still
-    # gets its folder when its own pattern has exactly one answer.
-    votes = Counter(base for hits in options.values() for base in hits)
-    common = min(votes, key=lambda b: (-votes[b], b.count("."), b)) if votes else None
-    out = dict(paths)
-    for name, hits in options.items():
-        if common in hits:
-            out[name] = hits[common]
-        elif len(hits) == 1:
-            out[name] = next(iter(hits.values()))
-    return out
-
-
-def _artifact_id(pom: Path) -> str | None:
-    """The project's own `artifactId`, not its parent's."""
-    try:
-        tree = ET.parse(pom)
-    except (ET.ParseError, OSError):
-        return None
-    for child in tree.getroot():
-        if child.tag.rsplit("}", 1)[-1] == "artifactId":
-            return (child.text or "").strip() or None
-    return None
-
-
-@functools.lru_cache(maxsize=None)
-def maven_modules(root: Path) -> dict[str, str]:
-    """`artifactId` → the module's directory, for every tracked `pom.xml`. All of them
-    rather than one reactor's `<modules>`: a repository of sibling modules has no
-    aggregator to read, and a reactor's modules are tracked poms like any other."""
-    out = {}
-    for pom in _ls_files(root, "pom.xml", "*/pom.xml"):
-        if "/node_modules/" in f"/{pom}" or pom.startswith(".human-review/"):
-            continue
-        aid = _artifact_id(root / pom)
-        folder = str(PurePosixPath(pom).parent)
-        if aid and aid not in out:
-            out[aid] = "." if folder == "." else folder
+        folder = str(PurePosixPath(module or ".") / st.strip("/"))
+        if (root / folder).is_dir():
+            out[box["name"]] = folder
     return out
 
 
@@ -197,19 +106,15 @@ def _tree_base(root: Path) -> str | None:
 
 
 def folder_targets(rel: str, root: Path) -> dict[str, tuple[str, str]]:
-    """Box name → `(label, repo-relative folder)` for every box in `rel` that is a package
-    or a Maven module of this checkout."""
+    """Box name → `(label, repo-relative folder)` for every box in `rel` that names a
+    folder of this checkout."""
     src = root / rel
     if not src.is_file():
         return {}
-    boxes = puml_boxes(src.read_text(encoding="utf-8", errors="replace"))
     pkgs = package_folders(rel, root)
-    modules = maven_modules(root)
-    by_dir = {PurePosixPath(d).name: d for d in modules.values() if d != "."}
     out = {}
-    for box in boxes:
-        folder = (pkgs.get(box["name"]) or modules.get(box["label"])
-                  or modules.get(box["name"]) or by_dir.get(box["label"]))
+    for box in puml_boxes(src.read_text(encoding="utf-8", errors="replace")):
+        folder = pkgs.get(box["name"])
         if folder:
             out.setdefault(box["name"], (box["label"], folder))
     return out
@@ -231,8 +136,8 @@ def _branch_files(root: Path, base: str) -> tuple[dict, ...]:
 
 def box_impact(targets: dict[str, tuple[str, str]], root: Path, base: str) -> dict[str, dict]:
     """Box name → `{files, adds, dels, share}`: the files the branch changed in the box's
-    folder, each counted once, in the deepest box that holds it (`..rest.dto` is not also
-    `..rest`). `share` is the box's part of the lines added across every box drawn — the
+    folder, each counted once, in the deepest box that holds it (`src/core` is not also
+    `src`). `share` is the box's part of the lines added across every box drawn — the
     bar behind it (Victor, 14 Oct 2026: "see in what package the PR added more lines")."""
     folders = sorted(((f.rstrip("/"), name) for name, (_, f) in targets.items()),
                      key=lambda t: -len(t[0]))
@@ -325,9 +230,9 @@ def only_impacted(markup: str) -> str:
 
 
 def link_folders(markup: str, rel: str, root: Path) -> str:
-    """Every box in `markup` (inlined SVGs of `rel`) that is a package or a module carries
+    """Every box in `markup` (inlined SVGs of `rel`) that names a folder carries
     `data-folder` / `data-folder-name`, and its shapes are wrapped in a link to the folder
-    on github.com when the checkout has a remote there. Boxes already linked are left be.
+    on the forge when the checkout has a remote there. Boxes already linked are left be.
 
     A box the branch changed files in is shaded, left to right, by its share of the lines
     added, and hovering it lists those files, each a link to its diff (`data-tip-pop`)."""

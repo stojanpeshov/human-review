@@ -50,13 +50,14 @@ def repo(tmp_path, monkeypatch):
     assert _git_init.returncode == 0, _git_init.stderr
     _git(r, "config", "user.email", "t@example.com")
     _git(r, "config", "user.name", "t")
-    (r / "src" / "A.java").write_text("class A {}\n", encoding="utf-8")
+    (r / "src" / "a.py").write_text("class A:\n    pass\n", encoding="utf-8")
+    (r / "src" / "app.ts").write_text("export const a = 1;\n", encoding="utf-8")
     (r / "d.puml").write_text("@startuml\nA -> B\n@enduml\n", encoding="utf-8")
     (r / "openapi.yaml").write_text("openapi: 3.0.0\n", encoding="utf-8")
     _git(r, "add", "-A")
     _git(r, "commit", "-qm", "base")
     _git(r, "checkout", "-qb", "feature")
-    (r / "src" / "B.java").write_text("class B {}\n", encoding="utf-8")
+    (r / "src" / "b.py").write_text("class B:\n    pass\n", encoding="utf-8")
     _git(r, "add", "-A")
     _git(r, "commit", "-qm", "work")
     (r / ".human-review" / "assets").mkdir(parents=True)
@@ -103,18 +104,19 @@ def test_an_untouched_repository_fingerprints_the_same_twice(repo):
 
 def test_editing_a_declared_input_moves_that_steps_key(repo):
     before = _key(repo, "complexity")
-    (repo / "src" / "A.java").write_text("class A { int x; }\n", encoding="utf-8")
+    (repo / "src" / "a.py").write_text("class A:\n    x = 1\n", encoding="utf-8")
     assert _key(repo, "complexity") != before
 
 
 def test_editing_an_input_leaves_an_unrelated_step_alone(repo):
     """The point of declaring inputs per step rather than hashing the whole tree once.
 
-    A Java edit must re-run `complexity` and must NOT re-run `diagrams` — otherwise the
+    A TypeScript edit must re-run `logging` and must NOT re-run `diagrams` — otherwise the
     cache degenerates into "everything or nothing", which is what it replaced."""
-    before = _key(repo, "diagrams")
-    (repo / "src" / "A.java").write_text("class A { int y; }\n", encoding="utf-8")
+    before, logging = _key(repo, "diagrams"), _key(repo, "logging")
+    (repo / "src" / "app.ts").write_text("export const a = 2;\n", encoding="utf-8")
     assert _key(repo, "diagrams") == before
+    assert _key(repo, "logging") != logging
 
 
 def test_an_untracked_file_counts_as_a_change(repo):
@@ -289,12 +291,12 @@ def test_the_second_run_skips_and_the_third_still_does(repo, step):
 
 
 def test_a_changed_input_re_runs_only_the_steps_that_read_it(repo):
-    _main(repo, "--only", "tests,complexity,diagrams")
-    (repo / "src" / "A.java").write_text("class A { int z; }\n", encoding="utf-8")
-    rows = {r["step"]: r for r in _main(repo, "--only", "tests,complexity,diagrams")}
-    assert not rows["complexity"].get("cached"), "a Java edit did not re-run complexity"
-    assert not rows["tests"].get("cached"), "a Java edit did not re-run the test manifest"
-    assert rows["diagrams"].get("cached") is True, "a Java edit needlessly redrew the diagrams"
+    _main(repo, "--only", "tests,logging,diagrams")
+    (repo / "src" / "app.ts").write_text("export const a = 3;\n", encoding="utf-8")
+    rows = {r["step"]: r for r in _main(repo, "--only", "tests,logging,diagrams")}
+    assert not rows["logging"].get("cached"), "a TypeScript edit did not re-run logging"
+    assert not rows["tests"].get("cached"), "a TypeScript edit did not re-run the test manifest"
+    assert rows["diagrams"].get("cached") is True, "a TypeScript edit needlessly redrew the diagrams"
 
 
 def test_force_re_runs_everything_and_still_records_a_usable_key(repo):
@@ -364,7 +366,7 @@ def test_the_suite_command_is_part_of_the_traces_key(repo):
 
 def test_a_test_or_app_edit_moves_the_traces_key(repo):
     before = _key(repo, "traces", TRACED)
-    (repo / "src" / "A.java").write_text("class A { int t; }\n", encoding="utf-8")
+    (repo / "src" / "a.py").write_text("class A:\n    t = 1\n", encoding="utf-8")
     assert _key(repo, "traces", TRACED) != before
 
 

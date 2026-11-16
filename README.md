@@ -137,7 +137,7 @@ inside the repository — they stay `human-review` in your fork, whoever owns it
 
 The detour is worth one paragraph. Adding a marketplace tells Claude Code to run
 whatever that repository holds, and to keep doing so as the repository changes; this
-plugin drives a browser, a database and a Maven build, and reads your working tree, so
+plugin drives a browser, a database and your test suites, and reads your working tree, so
 that is a wide standing grant to hand to a branch someone else can push to. Nothing here
 is specific to this repo — it is simply how plugin marketplaces work, and it is the
 reason to point Claude Code at a copy whose contents change only when you change them.
@@ -570,7 +570,7 @@ Everything else buys a tab, and its absence costs only that tab:
   extractor, the OpenAPI spec, the screens the design-system audit visits, and
   `"generated"` — the globs for paths nobody types, which is what keeps the aftermath band
   red only for a human's edits. Copy
-  `skills/human-review/human-review.example.json` to start. Nothing in the skill knows
+  `skills/human-review/human-review.ludvig.json` to start. Nothing in the skill knows
   anything about your project, and a step this file does not describe is skipped and named
   on the page rather than failing the run
 

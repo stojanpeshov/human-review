@@ -71,7 +71,7 @@ def _source_of(fqcn: str):
     return None
 
 
-# Where each flow method is declared, when the snapshot says so (the JavaParser engine
+# Where each flow method is declared, when the snapshot says so (`endpoint-complexity.py`
 # writes `file` and `line` on every flow item): exact for overloads and nested classes,
 # where a search of the file by name would land on the first method of that name.
 DECL_AT: dict[str, tuple[str, int]] = {}
@@ -81,10 +81,9 @@ DECL_AT: dict[str, tuple[str, int]] = {}
 def entry_source(flow_method: str):
     """Where a flow starts, as (absolute path, 1-based line) — or None if not resolvable.
 
-    The JSON names a method `module.Class#method` and a function `module#function`. The line comes from the declaration in
-    the file rather than from bytecode, so it stays right for any project layout and needs no
-    debug symbols; an overload resolves to its first declaration, which is the file and method
-    a reviewer wanted anyway.
+    The JSON names a method `module.Class#method` and a function `module#function`. The line
+    is the snapshot's own `file`/`line` (`DECL_AT`) when it carries one, else the first
+    `def` of that name in the module's file.
     """
     if "#" not in flow_method:
         return None
@@ -94,16 +93,13 @@ def entry_source(flow_method: str):
         if path.is_file():
             return path, line
     fqcn, method = flow_method.split("#", 1)
-    method = method.split("(", 1)[0].split("#", 1)[0]  # `render(int)` -> `render`
+    method = method.split("(", 1)[0].split("#", 1)[0]
     path = _source_of(fqcn)
     if path is None:
         return None
-    decl = re.compile(r"\b" + re.escape(method) + r"\s*\(")
+    decl = re.compile(r"\bdef\s+" + re.escape(method) + r"\s*\(")
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        stripped = line.strip()
-        if stripped.startswith(("//", "*", "/*")) or "=" in stripped.split("(")[0]:
-            continue
-        if decl.search(line):
+        if not line.strip().startswith("#") and decl.search(line):
             return path, n
     return path, 1
 
@@ -117,9 +113,9 @@ def class_source(member: str):
     if found is None:
         return None
     name = member.partition("#")[0].rsplit(".", 1)[-1]
-    decl = re.compile(r"\b(?:class|interface|record|enum)\s+" + re.escape(name) + r"\b")
+    decl = re.compile(r"\bclass\s+" + re.escape(name) + r"\b")
     for n, line in enumerate(found[0].read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip().startswith(("//", "*", "/*")) and decl.search(line):
+        if not line.strip().startswith("#") and decl.search(line):
             return found[0], n
     return found[0], 1
 
@@ -165,7 +161,8 @@ def load_pair(before: Path, after: Path):
 
 
 def engine_of(path: Path) -> str:
-    """Which extractor wrote a snapshot: `javaparser` or `regex` (older snapshots: regex)."""
+    """Which extractor wrote a snapshot: its `engine` field, `ast` when it has none —
+    `endpoint-complexity.py` writes none."""
     entries = json.loads(path.read_text(encoding="utf-8"))
     return (entries[0].get("engine") if entries else None) or "ast"
 
@@ -196,7 +193,6 @@ def compare(before, after):
                 "methods": cur.get("methods"),
                 "why": [] if gone else breakdown(cur, old),
                 "graph": [] if gone else graph_nodes(cur, old),
-                "unresolved": [] if gone else (cur.get("unresolved") or []),
             }
         )
     rows.sort(key=lambda r: (-max(r["now"], r["was"] or 0), r["path"]))
@@ -507,31 +503,7 @@ def _path_cell(r) -> str:
     label = (f'<a class="cx-path" href="vscode://file/{found[0]}:{found[1]}:1">{face}</a>'
              if found else f'<code class="cx-path">{face}</code>')
     tip = r["path"] + (f"\n{handler}" if handler else "")
-    return f'<span class="cx-cell"{_tip(tip)}>{label}{_not_followed(r)}</span>'
-
-
-def _not_followed(r) -> str:
-    """"N not followed", when the engine met calls into this project it could not place.
-
-    Those calls are not in the number, and a number that silently leaves things out is the
-    one thing this tab must not be. So the row says how many, and the hover names each one
-    — the call, where it is, and why it could not be bound — so the reader can judge
-    whether what was skipped matters. Only the JavaParser engine reports them; the regex
-    engine drops what it cannot place without knowing it did."""
-    lost = r.get("unresolved") or []
-    if not lost:
-        return ""
-    lines = [NOT_FOLLOWED_TIP.format(n=len(lost))]
-    for u in lost[:12]:
-        lines.append(f'{Path(u.get("file", "")).name}:{u.get("line", "?")}  {u.get("call", "")}'
-                     f'  ({u.get("reason", "")})')
-    if len(lost) > 12:
-        lines.append(f"… and {len(lost) - 12} more")
-    return (f'<span class="cx-nf"{_tip(chr(10).join(lines))}>{len(lost)} not followed</span>')
-
-
-NOT_FOLLOWED_TIP = ("{n} call(s) into this project that could not be bound to a method — "
-                    "not followed, so not in this number:")
+    return f'<span class="cx-cell"{_tip(tip)}>{label}</span>'
 
 
 # The bar, the delta and the total carry no tooltip. They had one, the same on all three
@@ -644,11 +616,9 @@ def render(rows, engines=("ast", "ast")) -> str:
         # size and dress as every other tab that opens on a title.
         f'<h2 class="tabtitle cx-title"><a href="{SONAR_COGNITIVE}" target="_blank" '
         'rel="noopener">Cognitive Complexity</a> per Entry Point</h2>'
-        # Victor, 5 Oct 2026: name what computes it. Nothing parses Java here: the
-        # extractor is this skill's own script, regular expressions over the sources with
-        # comments and literals blanked and nesting counted by braces — so the line says
-        # that, rather than the syntax tree the old wording implied.
-        # Since 7 Oct 2026 there are two extractors, and the line names the one that ran.
+        # Victor, 5 Oct 2026: name what computes it — this skill's own script, over
+        # Python's `ast` — and, for a snapshot some other producer wrote, the line names
+        # the engine that ran.
         f'<p class="tabsub cx-lede">Computed by <a href="{EXTRACTOR_URL}" target="_blank" '
         f'rel="noopener">endpoint-complexity.py</a> {_lede_engine(engines)}</p>',
     ]
@@ -932,11 +902,6 @@ details.cx-row.cx-same:hover { opacity:.9; }
     ellipsis and the ↗ stays whole. */
 .cx-cell { display:flex; align-items:center; gap:3px; min-width:0; overflow:hidden; }
 .cx-cell .cx-path { flex:0 1 auto; min-width:0; }
-/* Calls the engine could not bind: not in the number, so the row says so, in amber — a
-    caveat about the measurement, not about the code. */
-.cx-nf { flex:none; margin-left:4px; padding:1px 5px; border-radius:8px; white-space:nowrap;
-         font:600 10px/1.3 system-ui,sans-serif; color:#8a5300; background:#fff3dc;
-         border:1px solid #e9c784; cursor:help; }
 /* `display:block` is what makes the ellipsis appear. `text-overflow` only applies to a
     block container, and <code> is inline — so the rule was there, doing nothing, while the
     link's own `overflow:hidden` chopped the path mid-token. `POST /api/owners/{ownerId}
@@ -1089,7 +1054,6 @@ a.cx-why-new .cx-why-inc { color:var(--cx-added); }
      red invented here. */
   .cx-get{color:#8fd39c}.cx-post{color:#8ab4f8}.cx-put{color:#e0a33c}.cx-delete{color:#f08a8a}
   .cx-patch{color:#c9a0ff}.cx-mcp{color:#b39dff}.cx-job{color:#e0a33c}
-  .cx-nf { background:#3a2d12; color:#f0c069; border-color:#6b5423; }
   .cx-kafka,.cx-rabbit,.cx-jms{color:#4dd0e1}
 }
 """

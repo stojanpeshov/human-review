@@ -1,4 +1,4 @@
-// A package's or a Maven module's box on the Structure tab, as a way into that folder.
+// A package's box on the Structure tab, as a way into that folder.
 //
 // The build stamps each box it could resolve with `data-folder` — the folder, relative to
 // the checkout — and, where the checkout has a github.com remote, wraps its shapes in a

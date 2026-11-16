@@ -82,7 +82,6 @@ from hrbuild.shared.fixtures import (
     FIXTURE_SEED,
     _FX_BLOCK,
     _FX_COLOUR,
-    _FX_HOOK_TRUNCATE,
     _FX_KW,
     _FX_NAME,
     _FX_DESCRIBE,
@@ -101,29 +100,12 @@ from hrbuild.shared.fixtures import (
     _fx_step_defs,
     _fx_strip_comments,
     _fx_verdict,
-    _FX_JVM_DB,
-    _FX_JVM_DECL,
-    _FX_JVM_TEST,
-    _FX_PROP_FILES,
-    _fx_annotations_above,
-    _fx_brace_end,
-    _fx_inline_props,
-    _fx_jvm_tests,
-    _fx_module_props,
-    _fx_on_seed,
-    _fx_props,
-    _fx_sql_names,
     _fx_blank,
-    _fx_sql_script,
-    _fx_meta_annotations,
-    _fx_jvm_module,
-    demo_fixtures,
     fixture_colors,
     fixture_dirs,
     fixture_hue,
     fixture_registry,
     fixtures_by_test,
-    fixtures_emptied,
     render_fixture_registry
 )
 from hrbuild.shared.commands import (
@@ -135,7 +117,7 @@ from hrbuild.shared.commands import (
     rerun_face, RERUN_MARK_AI, RERUN_MARK_SCRIPT, RERUN_MARK_SLOW, _RERUN_RING,
     rerun_html, rerun_tests_chip, RUN_TESTS_FACE, tab_rerun_html, TAB_RERUN_TIP,
     place_tab_reruns, tab_title_row, TAB_TITLES, CARD_HEADED_TABS, _TABTITLE_OPEN, _CARD_TITLE,
-    reveal_html, runtime_html, running_db_html, fixtures_row_html, SEED_OFFLINE_TIP, STATIC_RUN_TIP,
+    reveal_html, runtime_html, running_db_html, STATIC_RUN_TIP,
     _app_anchor
 )
 from hrbuild.shared.snippets import (
@@ -165,16 +147,12 @@ from hrbuild.shared.svg import (
 from hrbuild.shared.genseq import (
     genseq_by_test, GENSEQ_CALL_TITLE, genseq_details, genseq_details_at_base,
     genseq_details_at_render, genseq_file, genseq_overlay, genseq_overlay_copy,
-    committed_since, _overlay_state, GENSEQ_OVERLAY, GENSEQ_HANDLE, HTTP_VERBS, MAPPING_ANNOTATION, MAPPING_NAMED_PATH,
-    MAPPING_NAMED_CONSTANT, MAPPING_POSITIONAL_CONSTANT, STRING_CONSTANT, _string_constants,
-    MAPPING_POSITIONAL_PATH, METHOD_NAME, pair_anchor, REQUEST_METHOD, SKIP_DIRS,
-    spring_handlers, test_of_genseq, TYPE_DECL, _annotation_span, _controller_routes,
-    _declared_test, _details_carrier, _join_route, _mapping_path, _with_handlers,
-    handler_for, _template_match
+    committed_since, _overlay_state, GENSEQ_OVERLAY, GENSEQ_HANDLE, pair_anchor, SKIP_DIRS,
+    test_of_genseq, _declared_test, _details_carrier, _titles_without_route
 )
 from hrbuild.shared.folders import (
-    folder_targets, link_folders, maven_modules, package_folders, puml_boxes, _artifact_id,
-    _DECL, _ENTITY, _KEYWORD, _ls_files, _module_dir, _packages, _pattern, _SOURCE_DIR,
+    folder_targets, link_folders, package_folders, puml_boxes,
+    _DECL, _ENTITY, _FOLDER, _KEYWORD, _ls_files, _module_dir,
     _STEREO, _tree_base, box_impact, _branch_files, _impact_bar, _center_label, _impact_pop, _RECT, _ATTR,
     _PAINTED, ONLY_IMPACTED, only_impacted
 )
@@ -182,7 +160,7 @@ from hrbuild.shared.changes import changed_files, file_link, files_pop, _numbers
 from hrbuild.shared.diagrams import (
     CARD_NAME, card_rerun_html, card_rerun_id, REFRESH_CARD,
     CHANGED_BADGE, UNCHANGED_CONTEXT_TIP, api_spec_provenance, spec_version, diagram_provenance, generated_badge, prov_badge, _row_provenance,
-    _PROV_CODE, _PROV_SOURCES, _PROV_COMMANDS, _TESTED_VS, _WRITES, _TEST_PATH, _prov_source, _mentions,
+    _PROV_CODE, _PROV_SOURCES, _TESTED_VS, _WRITES, _TEST_PATH, _prov_source, _mentions,
     CM_LEGEND_NEW, CM_LEGEND_TODO, DEFAULT_FOCUS, DGM_SRC_ANCHOR, dgm_views_html, DRAWIO_TOKEN,
     drawio_unchanged, drawio_unchanged_at, drawio_widget_html, expand_drawio,
     find_diagram_source, read_manifest, render_diagrams, render_puml,
@@ -211,7 +189,7 @@ from hrbuild.shared.masthead import (
     _picked_outside
 )
 from hrbuild.shared.adopt import (
-    DIAGRAM_CARD, DIAGRAM_KINDS, EXPLAIN, PETCLINIC, PIECES, PLACES, ROBOT, _CAPTION, _TAG,
+    DIAGRAM_CARD, DIAGRAM_KINDS, EXPLAIN, PIECES, PLACES, ROBOT, _CAPTION, _TAG,
     _close, _last_caption, adopt_html, adopt_prompt, explain_button, explain_data, explain_key,
     place_prompts, IMPACT_LEGEND, _review_flow
 )
@@ -286,17 +264,17 @@ from hrbuild.tabs.review import (
 from hrbuild.tabs.sequence import (
     render_testpairs, SEQ_ARROW, SEQ_DECL,
     SEQ_UI_DRIVERS, FILEMARK, STALE, TEST_CATS, TEST_RUNNERS, _cat_chip, _lang_label,
-    _folded_pair, _pair_title, _CLASS_TITLE, _METHOD_NAME, _test_words, _line_spans, _moved_since_base, _narrowed, _pair_cat,
+    _folded_pair, _line_spans, _moved_since_base, _narrowed, _pair_cat,
     _pair_runner, _scenario_extents, _scenarios_drawn, _share_excerpts, _spans_for,
     _stale_sequence, _unchanged_sequence, _unquoted_note,
     SEQ_VERDICT, SEQ_VERDICT_ALARM, SEQ_VERDICT_FACE, sequence_verdict,
     sequence_verdict_alarm, sequence_verdict_html, lost_note_html, _lost,
     AUTO_SNIPPETS, derived_snippets, GENSEQ_TAG, scenario_span, tagged_scenarios, _counted,
-    _drew_nothing, _FEATURE_DECL, _FEATURE_STOP, _JAVA_DECL, _ref, _SKIP_LINE, _STRINGS,
+    _drew_nothing, _FEATURE_DECL, _FEATURE_STOP, _ref, _SKIP_LINE, _STRINGS,
     _tagged_decl, _test_kind, _TS_DECL, _decl_names, _current_decl, undrawn_reason,
     SEQ_SELECTION, SEQ_WHY, sequence_selection, _slug, picked_for, _why_chip,
     SEQ_ALSO, ledger_status,
-    SEQ_TOUCHED, touched_via, _branch_changed, _direct_imports, _TS_IMPORT, _JAVA_IMPORT,
+    SEQ_TOUCHED, touched_via, _branch_changed, _direct_imports, _TS_IMPORT,
     TRACE_SHOT, TRACE_SHOT_META, TRACE_ANSWER, TRACE_HOW, TRACE_SAMPLED, trace_how_html,
     _trace_shot_html, TRACE_EXAMPLE, _TRACE_EXAMPLE_SRC, TRACE_EXAMPLE_SAID, _trace_example_html
 )
@@ -318,7 +296,6 @@ from hrbuild.tabs.tests import (
     COVERAGE_JSON, COVCARD_WHO, COVCARD_WHO_PR, covcard_who, covcard_tip, COVCARD_TIP, COVCARD_TIP_ALL, COV_SHIELD, promote_traced, COV_COMMON_SHARE,
     COV_COMMON_MIN,
     COV_NOT_MEASURED, load_coverage, coverage_join, model_pairing, coverage_side, _model_key,
-    TEMPLATE_UNSEEN, _rendered_templates,
     _cov_ranges, _snippet_module, COV_PART_MAX, _GHERKIN_NEXT, _cov_part,
     _API_MARKERS, _E2E_DIR, _cov_cat, coverage_tests, coverage_after, _load_test_changes, suite_chips
 )
@@ -333,7 +310,7 @@ from hrbuild.tabs.city import (
 from hrbuild.tabs.logging import (
     LOGEXTRACT, logging_fragment, logging_libraries, logging_libraries_tip,
     MAX_ORIGIN_LINES_SHOWN, SRCREF_HREF, type_hint_html, _aim_at_statement, _hint_arguments,
-    _CHAR, _CONCERN, _concerns_line, _insert_at, _LOG_PKGS_RE, _logextract, _logging_aside, _logging_listing,
+    _CHAR, _CONCERN, _concerns_line, _insert_at, _logextract, _logging_aside, _logging_listing,
     _logging_ref, _plain, _PRE, _ROW, _TAG_SPLIT, _change_line, _mark_rewritten, _ADDED_ROW,
     _inlay_file
 )

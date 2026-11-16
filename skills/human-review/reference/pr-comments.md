@@ -57,7 +57,7 @@ record is `review-points.md`). Write it **after** commit #2, so `commit_id` is t
     {
       "pile": "fixed",
       "title": "The vet picker could not load on the screens that need it",
-      "path": "petclinic-backend/src/main/java/victor/training/petclinic/rest/VetRestController.java",
+      "path": "src/activities/handlers/activity_handler.py",
       "line": 50,
       "side": "RIGHT",
       "anchor": "@PreAuthorize(\"hasAnyRole(@roles.OWNER_ADMIN, @roles.VET_ADMIN)\")",

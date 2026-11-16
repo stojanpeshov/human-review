@@ -12,8 +12,8 @@
 
 ## What you see
 
-- **Backend Java packages**, **Backend Build Units** (the Maven modules) and **Frontend TypeScript packages** — the project's own diagrams, diffed, or stamped
-  UNCHANGED so you know they were checked rather than forgotten.
+- **Packages** — the service's Python packages and their imports, generated on both sides
+  and diffed, or stamped UNCHANGED so you know they were checked rather than forgotten.
 - **C2 Containers** — the C4 container view, not drawn at all: it is projected from the
   recorded sequence diagrams, so a call to a new service puts a box and a line here because
   the call happened.

@@ -3,7 +3,6 @@ ink, the `?`/`values` badge in the SQL marks' colours, the IDE logo where the ge
 `↗`, and the DB fixture each test starts from beside its file name."""
 from __future__ import annotations
 
-import html
 import importlib.util
 import re
 import subprocess
@@ -100,19 +99,7 @@ def test_each_pair_wears_the_tests_tab_dot_for_the_fixture_its_test_starts_from(
     assert "fx-dot" not in own, "declares no fixture: starts on an empty database, no dot"
 
 
-def test_the_row_names_the_test_in_words_without_its_class():
-    """The class is the file at the row's right end, so it is dropped, and a bare method
-    name reads as words, the way `PrettyTestNames` spells one (Victor, 20 Oct 2026).
-    Prose titles — E2E scenarios — have no class, and a colon in prose is not one."""
-    assert build._pair_title(["VisitTest: create_withoutVet()"]) == \
-        '<span class="seqtitle">create without vet</span>'
-    assert build._pair_title(["AddVisitApiTest: adds a visit to an existing pet"]) == \
-        '<span class="seqtitle">adds a visit to an existing pet</span>'
-    assert build._pair_title(["VisitTest: a()", "VisitTest: b()"]) == \
-        '<span class="seqtitle">a · b</span>'
-    for prose in ("Searching with an empty last name lists every owner",
-                  "Owner search: an empty name lists everyone"):
-        assert build._pair_title([prose]) == html.escape(prose)
+def test_the_caret_sits_close_to_the_kind_chip():
     css = (Path(build.__file__).parent / "hrbuild/assets/css/sequence.css").read_text()
     assert "details.testpair > summary::before { margin-right:-.05rem; }" in css, \
         "the caret sits half as far from the kind chip as core.css's folds do"
@@ -125,21 +112,21 @@ def test_a_test_the_verdicts_do_not_name_gets_no_dot(tmp_path, monkeypatch):
     assert "fx-dot" not in out
 
 
-def test_a_jvm_verdict_keyed_on_the_annotation_still_reaches_the_method_the_diagram_names(
+def test_a_verdict_keyed_on_a_tag_still_reaches_the_scenario_the_diagram_names(
         tmp_path, monkeypatch):
-    """The diagram's handle names the method's line; a verdict may be keyed on `@Test`,
-    two annotation lines up. Code in between is another test's, and gets nothing."""
-    rel = "be/src/test/java/AddVisitTest.java"
-    (tmp_path / "be/src/test/java").mkdir(parents=True)
-    (tmp_path / rel).write_text("class AddVisitTest {\n"            # 1
-                                "    @Test\n"                       # 2
-                                "    @Order(1)\n"                   # 3
-                                "    void adds() {}\n"              # 4
-                                "    void other() {}\n"             # 5
-                                "    void third() {}\n")            # 6
+    """The diagram's handle names the scenario's line; a verdict may be keyed on a tag,
+    two tag lines up. A step in between is another scenario's, and gets nothing."""
+    rel = "e2e/features/add-visit.feature"
+    (tmp_path / "e2e/features").mkdir(parents=True)
+    (tmp_path / rel).write_text("Feature: visits\n"                # 1
+                                "  @generate_sequence\n"           # 2
+                                "  @slow\n"                        # 3
+                                "  Scenario: adds\n"               # 4
+                                "    When I add a visit\n"         # 5
+                                "  Scenario: third\n")             # 6
     (tmp_path / "gen").mkdir()
-    (tmp_path / "gen/AddVisitTest.java.adds.genseq.puml").write_text(_puml(rel, 4, "adds"))
-    (tmp_path / "gen/AddVisitTest.java.third.genseq.puml").write_text(_puml(rel, 6, "third"))
+    (tmp_path / "gen/add-visit.feature.adds.genseq.puml").write_text(_puml(rel, 4, "adds"))
+    (tmp_path / "gen/add-visit.feature.third.genseq.puml").write_text(_puml(rel, 6, "third"))
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-qm", "c")

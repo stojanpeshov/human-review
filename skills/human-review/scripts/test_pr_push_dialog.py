@@ -83,7 +83,7 @@ def record(status="complete", present=2, sha=None) -> dict:
 
 @pytest.fixture(scope="module")
 def browser():
-    """Its own, as `test_dataset_view.py` has: the `browser` it used to borrow was
+    """Its own: the `browser` it used to borrow was
     pytest-playwright's, a plugin a laptop happened to have and `requirements-dev.txt` (so
     CI) does not install, where the fixture simply did not exist."""
     pw = pytest.importorskip("playwright.sync_api")

@@ -52,10 +52,6 @@ details.testpair > summary:hover { color:var(--link); }
 /* The caret closer to the kind chip: half the gap core.css gives every fold (its .3rem
    margin plus this row's .4rem flex gap), on this tab only (Victor, 19 Oct 2026). */
 details.testpair > summary::before { margin-right:-.05rem; }
-/* The test a row runs, in words (sequence.py `_pair_title`). One flex item, so a narrow
-   card wraps it as a sentence; `anywhere` lets a long name break instead of running under
-   the file name. */
-.seqtitle { min-width:0; overflow-wrap:anywhere; }
 /* What kind of test drew the sequence, in the chip the Tests tab wears for the same three
    words and in the same three colours — `.evi.e2e` / `.api` / `.unit` a few hundred lines
    up are that palette, and the requirements map's own `--rm-*-bg` are the same hues again.
@@ -113,7 +109,7 @@ details.testpair:not([open]) > summary .seqviews { display:none; }
   border-bottom:1px dotted var(--line); }
 .seqlang a.dgm-src:hover { color:var(--link); border-bottom-color:currentColor; }
 /* The suites' own last lines, folded inside the band that says why this tab was not
-   re-traced. Wrapped rather than scrolled sideways: a Maven line is wider than any panel. */
+   re-traced. Wrapped rather than scrolled sideways: a log line is wider than any panel. */
 .seqverdict pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.76rem;
   line-height:1.5; max-height:18rem; overflow-y:auto; margin:.45rem 0 0; }
 /* The warning inside a pair whose re-trace lost what the committed diagram shows: a band,

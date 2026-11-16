@@ -1,8 +1,8 @@
 """The "Prompt to get this" buttons: one per adoptable piece, where that piece ends.
 
 Every tab is its own module with its own producer, and several tabs are more than one
-mechanism — the Data tab's domain model is drawn by reflection over the classes, its ERD
-from the migration scripts, its conceptual model by hand. A reader who likes one of them
+mechanism — the Data tab's ER diagram is written from the SQLAlchemy models, its
+migrations card from the Alembic revisions, its conceptual model by hand. A reader who likes one of them
 wants that one in their own repository, so each piece offers a prompt they paste into
 their own coding agent, from the corner of the card that shows it — or, when the piece is
 the whole tab, from the right end of the tab's title row.
@@ -37,8 +37,6 @@ from .footer import HOME_URL
 #: Not the 📋 the copy commands wear: this one is a message for an agent, not a command.
 ROBOT = "\U0001F916"   # 🤖
 
-PETCLINIC = "https://github.com/victorrentea/petclinic/blob/main/petclinic-backend/"
-
 #: piece → (what the button gets you, where it starts). A path is under
 #: `skills/human-review/`; a URL is a reference implementation in another repository.
 PIECES: dict[str, tuple[str, str]] = {
@@ -54,22 +52,10 @@ PIECES: dict[str, tuple[str, str]] = {
         "reference/film-prompt.md, reference/feature-script.md, "
         "scripts/record-feature-video.sh, scripts/hrbuild/tabs/demo.py, "
         "scripts/hrbuild/assets/caption.js"),
-    "behaviour.seed": (
-        "named datasets (DB fixtures) the running app can be reset to with one click, each "
-        "one's tables shown in place so two of them can be compared",
-        "scripts/dataset_view.py, scripts/hrbuild/assets/dataset-view.js, "
-        "scripts/hrbuild/shared/fixtures.py"),
     "api": (
         "the REST contract at the merge-base against the branch, as a visual OpenAPI diff "
         "with a breaking-change verdict", "scripts/openapi-visual-diff.py, "
         "scripts/openapi-compat.py, scripts/schema_tree.py, scripts/schema_puml.py"),
-    "diagram.domain": (
-        "the domain-model class diagram generated from your domain classes by Java "
-        "reflection, committed as PlantUML and diffed base against branch",
-        PETCLINIC + "src/test/java/victor/training/petclinic/guardrail/"
-        "DomainModelExtractorTest.java, " + PETCLINIC + "src/test/java/victor/training/"
-        "petclinic/guardrail/DomainModelExtractor.java, scripts/puml-diff.sh, "
-        "puml-diff/puml_diff.py"),
     "migrations": (
         "the Alembic migrations card: each new revision's operations, flagged where risky",
         "scripts/alembic-review.py"),
@@ -80,11 +66,7 @@ PIECES: dict[str, tuple[str, str]] = {
         "scripts/hrbuild/shared/diagrams.py"),
     "diagram.drawio": (
         "the hand-drawn draw.io {title} diagram, checked against the code by a test and "
-        "diffed base against branch",
-        PETCLINIC + "src/test/java/victor/training/petclinic/guardrail/"
-        "ConceptualModelDiagramTest.java, " + PETCLINIC + "src/test/java/victor/training/"
-        "petclinic/guardrail/DeploymentDiagramTest.java, " + PETCLINIC + "src/test/java/"
-        "victor/training/petclinic/guardrail/DrawioDiagram.java, scripts/drawio-diff.py"),
+        "diffed base against branch", "scripts/drawio-diff.py"),
     "diagram.containers": (
         "the container view written from serverless*.yml — stacks, triggers, queues, tables — "
         "diffed base against branch",
@@ -97,11 +79,6 @@ PIECES: dict[str, tuple[str, str]] = {
         "code by a node:test that reads every import, and diffed base against branch",
         "https://github.com/victorrentea/petclinic/blob/main/petclinic-frontend/scripts/"
         "packages-arch.test.mjs, scripts/puml-diff.sh, "
-        "puml-diff/puml_diff.py"),
-    "diagram.modules": (
-        "the module graph generated from your build files, committed as PlantUML and "
-        "diffed base against branch",
-        PETCLINIC + "docs/scripts/mavenmodules/maven_modules_to_puml.py, scripts/puml-diff.sh, "
         "puml-diff/puml_diff.py"),
     "diagram.c2": (
         "the C4 container (C2) diagram projected from traced test runs — every arrow an "
@@ -225,16 +202,6 @@ EXPLAIN: dict[str, dict[str, object]] = {
             '<b>Running DB</b>: its JDBC URL, login included; a click opens it in IntelliJ.',
         ],
     },
-    'behaviour.seed': {
-        "li": [
-            'The rows put in the demo database before you try the app.',
-            '<b>Default</b> is the seed: the app inserts it into the database when it first boots.',
-            'Any other fixture is a dataset of its own, built on an empty DB when you press its <b>Seed</b>.',
-            'Each <b>Seed</b> empties every table and reloads that dataset, wiping what you typed.',
-            'Open a fixture to see its tables.',
-            'The file name on the right opens the SQL that holds the fixture\'s rows.',
-        ],
-    },
     'api': {
         "li": [
             'The OpenAPI contract, develop vs this branch, by oasdiff; <b>breaking</b>: a client can fail.',
@@ -249,16 +216,6 @@ EXPLAIN: dict[str, dict[str, object]] = {
             '<span class="c">develop:</span>{ "name": "Leo" }\n'
             '<span class="c">branch:</span>{ "firstName": "Leo" }   <span class="p">breaking</span>'
         ),
-    },
-    'diagram.domain': {
-        "li": [
-            'The entities, generated from the Java classes, not drawn by AI.',
-            'Green = added by this PR.',
-            'Check each new link: wanted, and <code>1─*</code> the right way round?',
-            '<b>✓ Generated from …</b>: the source it is redrawn from; click for the generator.',
-            '<b>changed</b> / <b>unchanged</b>: whether this branch moved the drawing.',
-        ],
-        "ex": 'e.g. <code>Owner 1─* Pet 1─* Visit</code>',
     },
     'migrations': {
         "li": [
@@ -326,15 +283,6 @@ EXPLAIN: dict[str, dict[str, object]] = {
         ],
         "ex": 'e.g. <code>parts</code> → <code>owners</code>: not drawn, so a test fails.',
     },
-    'diagram.modules': {
-        "li": [
-            'The Maven modules and their dependencies, from <code>mvn dependency:tree</code>.',
-            'A new arrow or a cycle between modules: ask why.',
-            '<b>Blue fill</b> = a box\'s share of the lines added; hover it for the changed files.',
-            '<b>Dimmed box</b>: nothing in it changed; <b>Impacted</b> hides those and their arrows.',
-            '<b>✓ Generated using …</b>: the command it is redrawn with; click for the generator.',
-        ],
-    },
     'diagram.c2': {
         "li": [
             'C4 level 2: the apps and databases, and who calls whom.',
@@ -348,7 +296,7 @@ EXPLAIN: dict[str, dict[str, object]] = {
         "li": [
             "A C4 view, drawn from the repo's Structurizr <code>.dsl</code>.",
             'C1 = users and systems, C2 = apps and DBs, C3 = parts of one app.',
-            '<b>✓ ArchUnit-tested vs code</b>: a test checks it; else the line under it says hand-kept.',
+            '<b>✓ Tested vs code</b>: a test checks it; else the line under it says hand-kept.',
         ],
     },
     'diagram': {
@@ -453,12 +401,10 @@ DIAGRAM_KINDS = (
     # First: a Structurizr card's head names a `.dsl` whose file name may say C2 too.
     ("diagram.c4", re.compile(r"\.dsl\b|\bStructurizr\b", re.I)),
     ("diagram.drawio", re.compile(r"\.drawio\b", re.I)),
-    ("diagram.domain", re.compile(r"domain\s*model", re.I)),
     ("diagram.db", re.compile(r"\bDB\b|\bERD\b|\bschema\b", re.I)),
     ("diagram.containers", re.compile(r"\bContainers\b")),
     ("diagram.c2", re.compile(r"\bC2\b", re.I)),
     ("diagram.frontend", re.compile(r"\bfrontend\b", re.I)),
-    ("diagram.modules", re.compile(r"modules?\b", re.I)),  # also MavenModules.puml, any title
     ("diagram.packages", re.compile(r"\bpackages?\b", re.I)),
 )
 

@@ -72,7 +72,7 @@ and a `why` of one line naming what in the body decides it.
        {"id": "src/app/…/list.component.spec.ts:221", "verdict": "asserts",
         "line": "expect(addOwner.disabled).toBeFalse();",
         "why": "checks the Add Owner button stays enabled"},
-       {"id": "src/test/…/OwnerTest.java:40", "verdict": "unrelated",
+       {"id": "tests/…/test_owner.py:40", "verdict": "unrelated",
         "line": "", "why": "only checks the owner's name"}]}
   ]
 }

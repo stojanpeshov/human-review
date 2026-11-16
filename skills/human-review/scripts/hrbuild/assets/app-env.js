@@ -169,20 +169,14 @@
   // `command_html` emitted, and SERVER_JS owns which of the two is up.
   var acts = {start: bar.querySelector('.appenv-start'),
               stop: bar.querySelector('.appenv-stop')};
-  // The DB Fixture card under this one (or, on a page built before it had a card of its
-  // own, a row inside this band): a Seed button per fixture, all drawn by the build from
-  // the project's files. The names never move; only the buttons are armed here, once
-  // something answers.
-  var resets = bar.querySelector('.appenv-fixtures') || document.querySelector('.appenv-fixtures');
   // The Running Database row: empty until the host's `db` command says where this
   // instance's database listens (the port is host-picked at start), and only while the app
   // answers on a served page — the one copy of the report that can ask the host.
   var dbRow = bar.querySelector('.appenv-db');
   var dbFor = '', dbFacts = null;
-  var SEED_OFF = 'Start the app first';
-  // Seed resets a database on this machine and \u25b8 drives a browser on it: online there
-  // is neither, so both are `data-local` — greyed by server.js, pointing at Serve.
-  [].forEach.call(document.querySelectorAll('.appenv-reset, .cue-drive'), function (el) {
+  // \u25b8 drives a browser on this machine: online there is none, so it is `data-local` —
+  // greyed by server.js, pointing at Serve.
+  [].forEach.call(document.querySelectorAll('.cue-drive'), function (el) {
     el.setAttribute('data-local', '');
   });
   // One command at a time. `docker compose up` is minutes, the row stays readable
@@ -238,7 +232,7 @@
 
   // The row's whole truth, in one call. Each verb is gated on the thing it actually needs
   // — because a control that can be pressed while its precondition is missing is a
-  // control that lies: Reset would fail, and \u25b8 would drive an app that is not there.
+  // control that lies: \u25b8 would drive an app that is not there.
   //
   // Off disk the gate is open on both. Neither can *run* there — they are
   // clipboards — and a clipboard for `stop` is exactly as useful with the app down as up:
@@ -248,9 +242,6 @@
   function setLive(live, why) {
     show(acts.start, !served || !live);
     show(acts.stop, !served || live);
-    // Greyed, never hidden: the fixtures are on screen with the app down (8 Oct 2026),
-    // and a Seed that disappears with it would leave a row of names that do nothing.
-    resetButtons().forEach(function (el) { arm(el, live, live ? resetTip(el) : SEED_OFF); });
     [].forEach.call(document.querySelectorAll('.cue-drive'), function (el) {
       arm(el, live, live ? 'Drive the app to this point' : why);
     });
@@ -372,7 +363,6 @@
       if (!r.ok) throw 0;
       say('live', '');
       setLive(true);
-      listFixtures(b);
     }).catch(function () {
       if (!look(failed)) down('Nothing is answering at ' + b + ' \u2014 start it first');
     });
@@ -401,61 +391,6 @@
       probe();
     }).catch(function () { if (!busy) probe(); });
     return true;
-  }
-
-  function resetButtons() {
-    return resets ? [].slice.call(resets.querySelectorAll('.appenv-reset')) : [];
-  }
-  // What each Seed puts back, in words. A fixture is a dataset of its own the environment
-  // loads into an emptied DB, not extras on the seed; when the environment describes it
-  // (`about`), the description joins the tip.
-  function resetTip(el) {
-    var name = el && el.dataset.fixture, about = el && el.dataset.about;
-    if (!name) return 'Reset the DB to the seed, the starting data';
-    return 'Empty the DB, then load the \u201c' + name + '\u201d fixture'
-           + (about ? ': ' + about : '');
-  }
-  // A fixture as the environment lists it: a bare name, or `{name, about}` — and a
-  // top-level `about: {name: text}` map is read too.
-  function fixtureOf(item, info) {
-    var name = typeof item === 'string' ? item : (item && item.name);
-    if (!name) return null;
-    var about = (item && typeof item === 'object' && (item.about || item.description))
-                || (info.about && typeof info.about === 'object' && info.about[name]) || '';
-    return {name: String(name), about: String(about)};
-  }
-
-  // The names are the build's; the environment is asked only what it can actually load.
-  // An instance started from an image older than a fixture's SQL would answer its Seed
-  // with a 404, so that one Seed is greyed and says why — the name stays, because the
-  // fixture is the branch's. No list in the answer (a sidecar from before fixtures) or
-  // no answer at all changes nothing.
-  function listFixtures(b) {
-    if (!bar.dataset.reset) return;
-    fetch(b + bar.dataset.reset, {cache: 'no-store'}).then(function (r) {
-      return r.ok ? r.json() : null;
-    }).then(function (info) {
-      // The row may have moved on while this was in flight — stopped, or pointed at
-      // another instance — and its answer is not this one's.
-      if (!info || base() !== b || state.dataset.state !== 'live'
-          || !Array.isArray(info.fixtures)) return;
-      var found = {};
-      info.fixtures.forEach(function (item) {
-        var f = fixtureOf(item, info);
-        if (f) found[f.name] = f;
-      });
-      resetButtons().forEach(function (el) {
-        var name = el.dataset.fixture || '';
-        if (!name) return;
-        if (!found[name]) {
-          arm(el, false, 'The running app has no \u201c' + name + '\u201d fixture: it '
-                         + 'was started from a commit without ' + name + '.sql');
-          return;
-        }
-        if (found[name].about) el.dataset.about = found[name].about;
-        arm(el, true, resetTip(el));
-      });
-    }).catch(function () {});
   }
 
   // What a verb that exited non-zero leaves in the row: its own word, and the last line it
@@ -708,32 +643,6 @@
     // what says the host can be asked at all.
   });
 
-  // Explicit, never automatic. Resetting on every link click would throw away work the
-  // reviewer was in the middle of; the duplicate rows and unique-constraint collisions it
-  // exists to prevent are the reviewer's own repeated form submissions, and they know
-  // when they have made a mess.
-  //
-  // One listener for the whole row.
-  if (resets) resets.addEventListener('click', function (ev) {
-    var btn = ev.target.closest('.appenv-reset');
-    if (!btn || blocked(btn) || btn.disabled) return;
-    var b = base();
-    if (!b) return;
-    var name = btn.dataset.fixture, face = btn.textContent, all = resetButtons();
-    all.forEach(function (el) { el.disabled = true; });
-    // Marks, not words: "Seeding…" is twice as wide as "Seed", and a button that grows
-    // mid-press shoves every fixture after it sideways (the min-width holds these).
-    btn.textContent = 'Seed\u2026';
-    fetch(b + bar.dataset.reset + (name ? '/' + encodeURIComponent(name) : ''),
-          {method: 'POST', cache: 'no-store'}).then(function (r) {
-      btn.textContent = r.ok ? 'Seed \u2713' : 'Seed \u2717';
-    }).catch(function () { btn.textContent = 'Seed \u2717'; }).then(function () {
-      setTimeout(function () {
-        btn.textContent = face;
-        all.forEach(function (el) { el.disabled = false; });
-      }, 1400);
-    });
-  });
   return function () { pods.clear(); untimed(); };
   }
 

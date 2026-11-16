@@ -149,7 +149,7 @@ def test_the_runtime_bar_carries_the_command_and_the_fallback(tmp_path):
     # Both opt-in controls stay away until the environment says it offers them: a button
     # that always fails is worse than no button.
     assert "appenv-stop" not in out
-    assert "appenv-reset" not in out and "data-reset" not in out
+    assert "appenv-reset" not in out and "appenv-fixtures" not in out
 
 
 def test_the_row_reads_the_state_first_then_the_verbs_that_act_on_it(tmp_path):
@@ -159,10 +159,10 @@ def test_the_row_reads_the_state_first_then_the_verbs_that_act_on_it(tmp_path):
     The address used to be pushed to the far right in a text box of its own, which made
     the bar read as a form with a field waiting to be filled in."""
     s = _video_dir(tmp_path, filmed=True)
-    s["runtime"] = {"command": "up", "stop": "down", "reset": "/__reset"}
+    s["runtime"] = {"command": "up", "stop": "down"}
     out = build.video_html(s, tmp_path)
     order = ["appenv-title", "appenv-state", "appenv-url", "appenv-start",
-             "appenv-stop", "appenv-reset"]
+             "appenv-stop"]
     assert [out.index(c) for c in order] == sorted(out.index(c) for c in order)
     assert ">Running app<" in out
     rule = build.CSS[build.CSS.index(".appenv .appenv-at"):]
@@ -173,22 +173,14 @@ def test_every_verb_starts_hidden_and_is_raised_by_the_script(tmp_path):
     """A verb drawn live that turns out not to apply has already been clicked by the time
     the probe corrects it, so nothing in this row ships visible.
 
-    The `hidden` sits on the *wrapper* for the three commands and on the button for Reset,
-    and that split is the design: inside a wrapper are the two faces of one verb — the
-    clipboard and the play — and SERVER_JS owns which of the two is up. Two owners of
+    The `hidden` sits on the *wrapper*, and that is the design: inside a wrapper are the two
+    faces of one verb — the clipboard and the play — and SERVER_JS owns which of the two is up. Two owners of
     `hidden` on one element is how a control ends up flickering between two truths."""
     s = _video_dir(tmp_path, filmed=True)
-    s["runtime"] = {"command": "up", "stop": "down", "urlCommand": "where",
-                    "reset": "/__reset"}
+    s["runtime"] = {"command": "up", "stop": "down", "urlCommand": "where"}
     out = build.video_html(s, tmp_path)
     for verb in ("start", "stop"):
         assert f'<span class="appenv-act appenv-{verb}" hidden>' in out
-    # Seed is the exception: it is on screen from the start, greyed, with the reason as
-    # its tip — the DB Fixture row is always there (8 Oct 2026), and only the script arms it.
-    at = out.index('class="appenv-reset"')
-    tag = out[out.rindex("<button", 0, at):out.index(">", at) + 1]
-    assert " hidden" not in tag and 'aria-disabled="true"' in tag
-    assert 'data-tip="Start the app first"' in tag
 
 
 def test_off_disk_every_verb_is_the_clipboard_for_its_own_command(tmp_path):
@@ -202,11 +194,9 @@ def test_off_disk_every_verb_is_the_clipboard_for_its_own_command(tmp_path):
     are in the markup of every copy, because the same file is opened both ways and only the
     script knows which."""
     s = _video_dir(tmp_path, filmed=True)
-    s["runtime"] = {"command": "up", "stop": "down", "urlCommand": "where",
-                    "reset": "/__reset"}
+    s["runtime"] = {"command": "up", "stop": "down", "urlCommand": "where"}
     out = build.video_html(s, tmp_path)
-    # Nothing hides a verb off disk any more — not even the fixtures' Seed, which stays
-    # on screen greyed until something answers (8 Oct 2026).
+    # Nothing hides a verb off disk any more.
     for verb in ("start", "stop", "resets", "fixtures"):
         assert f".appenv:not(.appenv-served) .appenv-{verb}" not in build.CSS
     # The second row is gone, name and all.
@@ -280,57 +270,16 @@ def test_the_stop_control_appears_only_when_a_command_is_declared(tmp_path):
     assert 'data-action="demo-env-stop"' in out
 
 
-def test_the_reset_control_appears_only_when_an_endpoint_is_declared(tmp_path):
+def test_the_running_app_band_draws_no_db_fixtures_or_seed(tmp_path):
+    """The DB Fixture card and its Seed buttons were petclinic's (Flyway SQL reset through
+    a sidecar); a `reset` in the content file is no longer drawn as anything."""
     s = _video_dir(tmp_path, filmed=True)
-    out = build.video_html(dict(s, runtime={"command": "x", "base": "http://localhost:4200"}),
-                           tmp_path)
-    assert "appenv-reset" not in out
     s["runtime"] = {"command": "x", "base": "http://localhost:4200", "reset": "/__reset"}
     out = build.video_html(s, tmp_path)
-    # One Seed per fixture in the DB Fixture row; with no project to read, the seed alone.
-    assert 'data-reset="/__reset"' in out and ">Seed</button>" in out
-    assert '<span class="appenv-fx-name">Default</span>' in out
-
-
-def test_the_fixture_row_lists_every_fixture_the_build_found_under_the_running_app_row():
-    """Victor, 8 Oct 2026: the fixtures are the build's, not the running app's, and they
-    sit in a row of their own under "Running app", whether anything is up or not. Each is
-    its dot, its name and a Seed; the 👁 is dataset-view.js's to add."""
-    rt = {"command": "up", "stop": "down", "reset": "/__reset"}
-    out = build.runtime_html(rt, fixtures=[("", "#8b929c"), ("green", "#2fa84f"),
-                                           ("busy-day", "#3b82f6")])
-    run_end = out.index("</div>", out.index('<div class="appenv-run">'))
-    row = out.index('<div class="appenv-fixtures"')
-    assert run_end < row, "a row of its own, after the Running app one"
-    assert "appenv-reset" not in out[:run_end], "nothing of the fixtures in the app row"
-    assert ">DB Fixture:<" in out
-    names = [out[i + len('<span class="appenv-fx-name">'):out.index("<", i + 1)]
-             for i in [j for j in range(len(out))
-                       if out.startswith('<span class="appenv-fx-name">', j)]]
-    assert names == ["Default", "green", "busy-day"]
-    assert out.count(">Seed</button>") == 3
-    assert 'style="--fx:#2fa84f"' in out and 'style="--fx:#8b929c"' in out
-    assert 'data-fixture="green"' in out
-    # Without a reset endpoint the row still lists the data, with nothing to press.
-    bare = build.runtime_html({"command": "up"}, fixtures=[("", "#8b929c"), ("green", "#0f0")])
-    assert ">green<" in bare and "appenv-reset" not in bare
-    # And the seed alone with nothing to do to it is no row at all.
-    assert "appenv-fixtures" not in build.runtime_html({"command": "up"})
-
-
-def test_demo_fixtures_are_read_off_the_sql_files_not_the_colour_map(tmp_path):
-    demo_fixtures = build.demo_fixtures
-    d = tmp_path / "db" / "fixtures"
-    d.mkdir(parents=True)
-    (d / "green.sql").write_text("select 1;")
-    (d / "blue.sql").write_text("select 1;")
-    (d / "fixture-colors.json").write_text('{"green": "#2fa84f", "gone": "#123456"}')
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
-    got = demo_fixtures(tmp_path)
-    assert [n for n, _ in got] == ["", "blue", "green"]
-    assert dict(got)["green"] == "#2fa84f"
-    assert demo_fixtures(None) == [("", "#8b929c")]
+    for gone in ("appenv-reset", "data-reset", "appenv-fixtures", ">Seed<", "dbfx", "dsv-data"):
+        assert gone not in out, gone
+    for gone in (".appenv-fixtures", ".appenv-reset", ".dbfx", ".dsv-"):
+        assert gone not in build.CSS, gone
 
 
 def test_a_recorded_video_gets_a_player(tmp_path):
@@ -397,14 +346,14 @@ def test_with_a_deployed_app_row_the_voices_still_sit_in_the_film_title_row(tmp_
     fact about the film, not the app, so they moved after the film's title (Victor, 7 Oct
     2026) — the band keeps only the app's own controls."""
     s = _video_dir(tmp_path, filmed=True)
-    s["runtime"] = {"command": "up", "stop": "down", "reset": "/__reset"}
+    s["runtime"] = {"command": "up", "stop": "down"}
     (tmp_path / "assets" / "f.voice-discovery.webm").write_bytes(b"\x1aE\xdf\xa3")
     (tmp_path / "assets" / "f.voices.json").write_text(json.dumps([
         {"key": "discovery", "label": "Discovery", "video": "f.voice-discovery.webm"}]),
         encoding="utf-8")
     out = build.video_html(s, tmp_path)
     assert out.count('class="voice-switch"') == 1
-    assert out.index("appenv-reset") < out.index("vidwrap") < out.index('class="voice-switch"')
+    assert out.index("appenv-stop") < out.index("vidwrap") < out.index('class="voice-switch"')
     assert out.index('<div class="vidhead">') < out.index('class="voice-switch"') \
         < out.index('<ol class="transcript"')
     assert "vidcol" not in out, "nothing left under the player"
@@ -1789,174 +1738,16 @@ def test_a_snippet_git_cannot_be_asked_about_is_unmarked(tmp_path):
 # the entry point behind a call arrow
 # --------------------------------------------------------------------------- #
 
-CONTROLLER = '''package x.rest;
-
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/api/owners")
-public class OwnerRestController {
-    @GetMapping(produces = "application/json")
-    @ApiResponse(responseCode = "200",
-            content = @Content(mediaType = "application/json",
-                    array = @ArraySchema(schema = @Schema(implementation = OwnerDto.class))))
-    public List<OwnerDto> listOwners() {
-        return List.of();
-    }
-
-    @PostMapping("{ownerId}/pets/{petId}/visits")
-    // Booking is one unit of work.
-    @Transactional
-    public ResponseEntity<Void> addVisitToOwner(@PathVariable int ownerId,
-            @RequestBody VisitFieldsDto dto) {
-        return null;
-    }
-}
-'''
-
-
-def _spring_repo(tmp_path):
-    src = tmp_path / "backend/src/main/java/x/rest"
-    src.mkdir(parents=True)
-    (src / "OwnerRestController.java").write_text(CONTROLLER, encoding="utf-8")
-    build.spring_handlers.cache_clear()
-    return build.spring_handlers(tmp_path)
-
-
-def test_a_route_resolves_to_the_method_that_answers_it(tmp_path):
-    """Class-level base plus method-level path, and the declaration under the annotation -
-    not the annotation's own line, which is where a reviewer would land on `@Transactional`."""
-    handlers = _spring_repo(tmp_path)
-    rel, line, name = handlers["POST /api/owners/{ownerId}/pets/{petId}/visits"]
-    assert rel == "backend/src/main/java/x/rest/OwnerRestController.java"
-    assert name == "OwnerRestController.addVisitToOwner"
-    assert CONTROLLER.splitlines()[line - 1].strip().startswith("public ResponseEntity<Void>")
-
-
-def test_a_media_type_is_not_mistaken_for_a_route(tmp_path):
-    """`produces = "application/json"` is the first string literal in the arguments, and a
-    wrapped `@ApiResponse` under it looks exactly like a method declaration to a line scan."""
-    handlers = _spring_repo(tmp_path)
-    rel, line, name = handlers["GET /api/owners"]
-    assert name == "OwnerRestController.listOwners"
-    assert "/api/owners/application/json" not in handlers
-
-
-def test_a_call_arrow_carries_its_handler_into_the_panel(tmp_path):
-    """The sidecar the generator filed knows the route and nothing about the code, so the
-    entry point is hung on it here, against this checkout."""
-    _spring_repo(tmp_path)
-    index = build._with_handlers({"details": {
-        "aaa": {"title": "Browser → Backend: POST /api/owners/{ownerId}/pets/{petId}/visits",
-                "steps": [{"label": "request body", "text": "{}"}]},
-        "bbb": {"title": "Backend → Browser: 200", "steps": [{"label": "response body",
-                                                                  "text": "{}"}]},
-    }}, tmp_path)
-    handler = index["details"]["aaa"]["handler"]
-    assert handler["name"] == "OwnerRestController.addVisitToOwner"
-    assert handler["href"].startswith("vscode://file/")
-    assert handler["href"].endswith(":1")
-    assert "handler" not in index["details"]["bbb"]
-
-
-def test_a_route_this_checkout_no_longer_serves_gets_no_row(tmp_path):
-    """A dead link into a method that is gone is worse than the route on its own."""
-    _spring_repo(tmp_path)
-    index = build._with_handlers({"details": {
-        "aaa": {"title": "Browser → Backend: DELETE /api/gone", "steps": []},
-    }}, tmp_path)
-    assert "handler" not in index["details"]["aaa"]
-
-
-NOTIFICATION_CONTROLLER = '''package victor.training.notification;
-
-@RestController
-public class NotificationController {
-    @PostMapping(VisitBookedNotification.PATH)
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public void visitBooked(@RequestBody VisitBookedNotification notification) {
-    }
-}
-'''
-
-VISIT_BOOKED = '''package victor.training.commons;
-
-public record VisitBookedNotification(String ownerPhone) {
-    public static final String PATH = "/api/notifications/visit-booked";
-}
-'''
-
-
-def test_a_route_named_by_a_constant_resolves_to_its_handler(tmp_path):
-    """`@PostMapping(VisitBookedNotification.PATH)` - the route lives in a shared library's
-    constant, which both the client and the service read. Before, the mapping had no string
-    literal, so the visit-booked arrow got no handler and its panel only repeated the URL."""
-    service = tmp_path / "notification-service/src/main/java/victor/training/notification"
-    commons = tmp_path / "petclinic-commons/src/main/java/victor/training/commons"
-    service.mkdir(parents=True)
-    commons.mkdir(parents=True)
-    (service / "NotificationController.java").write_text(NOTIFICATION_CONTROLLER, encoding="utf-8")
-    (commons / "VisitBookedNotification.java").write_text(VISIT_BOOKED, encoding="utf-8")
-    build.spring_handlers.cache_clear()
-    index = build._with_handlers({"details": {
-        "aaa": {"title": "Backend → NotificationService: POST /api/notifications/visit-booked",
-                "steps": [{"label": "request body", "text": "{}"}]},
-    }}, tmp_path)
-    entry = index["details"]["aaa"]
-    assert entry["handler"]["name"] == "NotificationController.visitBooked"
-    assert entry["handler"]["href"].endswith("NotificationController.java:7:1")
-    # The route is on the arrow already; the head names the call and, after it, the handler.
-    assert entry["title"] == "Backend → NotificationService"
-
-
-def test_a_call_title_drops_the_route_even_without_a_handler(tmp_path):
-    """No handler to name is no reason to repeat the arrow's own label in the panel."""
-    _spring_repo(tmp_path)
-    index = build._with_handlers({"details": {
+def test_a_call_title_drops_the_route():
+    """The arrow the reader clicked already shows the route; the panel's head says who
+    called whom, and a reply's status stays."""
+    index = build._titles_without_route({"details": {
         "aaa": {"title": "Browser → Backend: DELETE /api/gone", "steps": []},
         "bbb": {"title": "Backend → Browser: 200", "steps": []},
-    }}, tmp_path)
+    }})
     assert index["details"]["aaa"]["title"] == "Browser → Backend"
     assert index["details"]["bbb"]["title"] == "Backend → Browser: 200"
 
-
-def test_a_browser_request_entry_gets_its_controller_in_the_head_too(tmp_path):
-    """Sidecar version 3 gives every HTTP request arrow an entry, the browser's own among
-    them: `Browser → Backend: GET /api/owners/{ownerId}` names its handler exactly as a
-    service-to-service call does."""
-    _spring_repo(tmp_path)
-    index = build._with_handlers({"version": 3, "details": {
-        "req": {"title": "Browser → Backend: POST /api/owners/{ownerId}/pets/{petId}/visits",
-                "steps": [{"label": "request",
-                           "text": "POST http://127.0.0.1:63285/api/owners/1/pets/1/visits"}],
-                "request": {"method": "POST",
-                            "url": "http://127.0.0.1:63285/api/owners/1/pets/1/visits"}},
-    }}, tmp_path)
-    entry = index["details"]["req"]
-    assert entry["title"] == "Browser → Backend"
-    assert entry["handler"]["name"] == "OwnerRestController.addVisitToOwner"
-    assert entry["request"]["url"].endswith("/api/owners/1/pets/1/visits"), "carried as is"
-
-
-def test_a_concrete_route_finds_the_mapping_whose_template_it_fills(tmp_path):
-    """A title or a `request` spelt as sent — `/api/owners/1`, a query string — still lands on
-    `/api/owners/{ownerId}`; the most literal template wins, as in Spring."""
-    handlers = {"GET /api/owners/{ownerId}": ("a", 1, "C.byId"),
-                "GET /api/owners/new": ("a", 2, "C.form"),
-                "GET /api/owners": ("a", 3, "C.list")}
-    assert build.handler_for(handlers, "GET", "/api/owners/1")[2] == "C.byId"
-    assert build.handler_for(handlers, "GET", "/api/owners/new")[2] == "C.form"
-    assert build.handler_for(handlers, "GET", "/api/owners?lastName=D")[2] == "C.list"
-    assert build.handler_for(handlers, "POST", "/api/owners/1") is None
-    assert build.handler_for(handlers, "GET", "/api/owners/1/pets") is None
-    _spring_repo(tmp_path)
-    index = build._with_handlers({"details": {
-        "req": {"title": "Browser → Backend", "steps": [],
-                "request": {"method": "post",
-                            "url": "http://127.0.0.1:1/api/owners/7/pets/3/visits?x=1"}}}},
-        tmp_path)
-    assert index["details"]["req"]["handler"]["name"] == "OwnerRestController.addVisitToOwner"
-    assert index["details"]["req"]["title"] == "Browser → Backend", "nothing to cut"
 
 
 # --------------------------------------------------------------------------- #
@@ -1995,11 +1786,11 @@ def test_a_name_that_occurs_in_two_changed_files_asks_for_the_path():
 def test_a_test_the_change_set_never_touched_is_found_in_the_file_and_called_unchanged(tmp_path):
     """A requirement is often pinned by a test nobody edited. Saying so is worth a row —
     but the row still has to be real, so the file is parsed for the declaration."""
-    f = tmp_path / "src" / "test" / "OldTest.java"
+    f = tmp_path / "tests" / "test_old.py"
     f.parent.mkdir(parents=True)
-    f.write_text("class OldTest {\n  @Test\n  void alreadyThere() {\n  }\n}\n")
+    f.write_text("import pytest\n\ndef test_already_there():\n    pass\n")
     rows = build.resolve_tests(
-        [{"name": "alreadyThere", "path": "src/test/OldTest.java"}], _idx(), tmp_path)
+        [{"name": "test_already_there", "path": "tests/test_old.py"}], _idx(), tmp_path)
     assert rows[0]["status"] == "unchanged" and rows[0]["line"] == 3
 
 
@@ -2142,11 +1933,11 @@ def test_an_untouched_test_that_does_not_run_still_says_so(tmp_path):
     """The worst case for a coverage claim: the requirement names a test, the test is
     real, the branch never touched it — and somebody disabled it months ago. Nothing in
     the diff can catch that, so the declaration is read off the working tree."""
-    f = tmp_path / "src" / "test" / "OldTest.java"
+    f = tmp_path / "tests" / "test_old.py"
     f.parent.mkdir(parents=True)
-    f.write_text("class OldTest {\n  @Disabled\n  @Test\n  void alreadyThere() {\n  }\n}\n")
+    f.write_text("import pytest\n\n@pytest.mark.skip\ndef test_already_there():\n    pass\n")
     rows = build.resolve_tests(
-        [{"name": "alreadyThere", "path": "src/test/OldTest.java"}], _idx(), tmp_path)
+        [{"name": "test_already_there", "path": "tests/test_old.py"}], _idx(), tmp_path)
     assert rows[0]["status"] == "unchanged" and rows[0]["silenced"] == "disabled"
 
 
@@ -5095,19 +4886,17 @@ def test_a_tagged_test_whose_dsl_helper_the_branch_edited_says_touched(tmp_path,
     assert 'sw-at">@</span></span>' in out and "sw-edit" not in out
 
 
-def test_direct_imports_resolve_java_classes_and_relative_ts_modules(tmp_path):
+def test_direct_imports_resolve_relative_ts_modules(tmp_path):
     seq = importlib.import_module("hrbuild.tabs.sequence")
-    java = "app/src/test/java/p/AddVisitApiTest.java"
-    for rel in (java, "app/src/test/java/p/genseq/GenerateSequence.java",
-                "app/src/main/java/p/domain/Visit.java"):
+    spec = "web/tests/add-visit.spec.ts"
+    for rel in (spec, "web/tests/helpers.ts", "web/src/visit/index.ts"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / rel).write_text("class X {}\n")
-    (tmp_path / java).write_text(
-        "package p;\nimport p.genseq.GenerateSequence;\nimport p.domain.Visit;\n"
-        "import static p.domain.Visit.of;\nimport java.util.List;\nclass AddVisitApiTest {}\n")
-    assert seq._direct_imports(java, tmp_path) == [
-        "app/src/test/java/p/genseq/GenerateSequence.java",
-        "app/src/main/java/p/domain/Visit.java", "app/src/main/java/p/domain/Visit.java"]
+        (tmp_path / rel).write_text("export {}\n")
+    (tmp_path / spec).write_text(
+        "import { a } from './helpers';\nimport { V } from '../src/visit';\n"
+        "import { test } from '@playwright/test';\n")
+    assert seq._direct_imports(spec, tmp_path) == ["web/tests/helpers.ts", "web/src/visit/index.ts"]
+    assert seq._direct_imports("web/tests/test_x.py", tmp_path) == [], "a file that is not there"
     feature = "t/src/owner-search.feature"
     (tmp_path / feature).parent.mkdir(parents=True)
     (tmp_path / feature).write_text("Feature: x\n")
@@ -5976,7 +5765,7 @@ def test_a_file_the_branch_added_keeps_its_diff_link(tmp_path, monkeypatch):
 
 
 def test_an_extracted_constant_takes_its_use_sites_onto_its_own_card(tmp_path):
-    """Eval run 12's Sonar S1192 fix: the card showed the two `static final` declarations
+    """Eval run 12's Sonar S1192 fix: the card showed the constant's declaration
     and the eight lines that swap the literal for the constant sat under *Other changes*,
     where nothing said they were the same fix. A hunk of the same file that replaces the
     literal with the constant's name now goes to the card that declares it; a hunk that
@@ -5987,26 +5776,26 @@ def test_an_extracted_constant_takes_its_use_sites_onto_its_own_card(tmp_path):
     git("init", "-q")
     git("config", "user.email", "t@t")
     git("config", "user.name", "t")
-    body = ["class Advice {", "    Logger log;"] + [f"    // filler {i}" for i in range(30)] \
-        + ['    void a() { log.warn("Validation failed: {}", x); }'] \
-        + [f"    // more {i}" for i in range(30)] + ["    int unrelated = 1;", "}"]
-    (tmp_path / "Advice.java").write_text("\n".join(body) + "\n")
+    body = ["import logging", "log = logging.getLogger()"] + [f"# filler {i}" for i in range(30)] \
+        + ['def a(): log.warning("Validation failed: %s", x)'] \
+        + [f"# more {i}" for i in range(30)] + ["unrelated = 1", ""]
+    (tmp_path / "advice.py").write_text("\n".join(body) + "\n")
     git("add", ".")
     git("commit", "-qm", "impl")
     impl = git("rev-parse", "HEAD")
-    body.insert(2, '    private static final String VALIDATION_FAILED = "Validation failed: {}";')
-    body = [ln.replace('"Validation failed: {}", x', "VALIDATION_FAILED, x") for ln in body]
-    body[body.index("    int unrelated = 1;")] = "    int unrelated = 2;"
-    (tmp_path / "Advice.java").write_text("\n".join(body) + "\n")
+    body.insert(2, 'VALIDATION_FAILED = "Validation failed: %s"')
+    body = [ln.replace('"Validation failed: %s", x', "VALIDATION_FAILED, x") for ln in body]
+    body[body.index("unrelated = 1")] = "unrelated = 2"
+    (tmp_path / "advice.py").write_text("\n".join(body) + "\n")
     git("add", ".")
     git("commit", "-qm", "[auto-fix]")
     fix = git("rev-parse", "HEAD")
-    card = {"title": "Validation literals duplicated", "refs": ["Advice.java:3"]}
+    card = {"title": "Validation literals duplicated", "refs": ["advice.py:3"]}
     spec = {"autofixes": [card],
             "_reviewPoints": {"provenance": {"implementation": impl, "reviewCommit": fix}}}
     build.attribute_fix_hunks(spec, tmp_path, root=tmp_path)
     assert "VALIDATION_FAILED = " in card["_fixDiffs"]
-    assert "log.warn(VALIDATION_FAILED, x)" in card["_fixDiffs"], "the use site, on its card"
+    assert "log.warning(VALIDATION_FAILED, x)" in card["_fixDiffs"], "the use site, on its card"
     other = spec["_reviewPoints"].get("fixOther") or ""
     assert "VALIDATION_FAILED, x" not in other
     assert "unrelated = 2" in other, "a hunk that swaps no literal is still nobody's"
@@ -6594,31 +6383,31 @@ def test_the_data_tab_shows_every_named_diagram_changed_or_not(tmp_path):
 
 # ── eval run 11: the Review tab, for a reviewer who is busy and stressed ────────────
 
-STREAM_JAVA = """class C {
-    List<Owner> load(List<Integer> ids) {
-        return ids.stream()
-                .map(id -> Optional.ofNullable(byId.get(id))
-                        .orElseThrow(() -> new IllegalStateException("gone")))
-                .toList();
+STREAM_TS = """class C {
+    load(ids: number[]): Owner[] {
+        return ids.filter(Boolean)
+                .map(id => required(byId.get(id))
+                        .orElseThrow(() => new Error("gone")))
+                .slice(0);
     }
-    int one() { return 1; }
+    one() { return 1; }
 }
 """
 
 
 def test_a_one_line_anchor_on_the_tail_of_a_statement_quotes_the_whole_statement(tmp_path):
-    """Run 11 pinned two findings to OwnerRestController.java:142 — `.toList();` — and the
+    """Run 11 pinned two findings to OwnerRestController.java:142 — `.toList();` (a Java stream, then) — and the
     throwing `.orElseThrow(…)` on 141 was off the card."""
-    (tmp_path / "C.java").write_text(STREAM_JAVA)
-    assert build.widen_anchor("C.java:6", tmp_path) == "C.java:3-6"
-    assert build.widen_anchor("C.java:4", tmp_path) == "C.java:3-6", "open both ways"
-    assert build.widen_anchor("C.java:8", tmp_path) == "C.java:8", "a whole statement stays"
-    assert build.widen_anchor("C.java:3-6", tmp_path) == "C.java:3-6", "a range is the author's"
+    (tmp_path / "C.ts").write_text(STREAM_TS)
+    assert build.widen_anchor("C.ts:6", tmp_path) == "C.ts:3-6"
+    assert build.widen_anchor("C.ts:4", tmp_path) == "C.ts:3-6", "open both ways"
+    assert build.widen_anchor("C.ts:8", tmp_path) == "C.ts:8", "a whole statement stays"
+    assert build.widen_anchor("C.ts:3-6", tmp_path) == "C.ts:3-6", "a range is the author's"
     (tmp_path / "n.md").write_text("a,\n.b\n")
     assert build.widen_anchor("n.md:2", tmp_path) == "n.md:2", "only code files"
     chain = "x = a\n" + "".join("    .f()\n" for _ in range(20)) + "    .g();\n"
-    (tmp_path / "L.java").write_text(chain)
-    lo, hi = map(int, build.widen_anchor("L.java:22", tmp_path).split(":")[1].split("-"))
+    (tmp_path / "L.ts").write_text(chain)
+    lo, hi = map(int, build.widen_anchor("L.ts:22", tmp_path).split(":")[1].split("-"))
     assert hi == 22 and hi - lo + 1 == build.STATEMENT_LINES, "never more than six"
 
 
@@ -6854,21 +6643,21 @@ def test_each_files_count_opens_onto_the_files_it_counts(tmp_path):
 
 def test_the_api_band_says_its_spec_is_generated_from_code_and_links_it(tmp_path):
     """Victor, 29 Oct 2026: the API tab says, like a diagram card, that its contract is
-    written by a test from the Java code, and links the spec itself."""
+    written by a test from the code, and links the spec itself."""
     import subprocess
     (tmp_path / "human-review.json").write_text('{"spec": "openapi.yaml"}')
     (tmp_path / "openapi.yaml").write_text("openapi: 3.0.1\n")
-    test = tmp_path / "src/test/java/OpenApiExtractorTest.java"
+    test = tmp_path / "tests/test_openapi_spec.py"
     test.parent.mkdir(parents=True)
-    test.write_text('class OpenApiExtractorTest { void gen() {\n'
-                    '  Files.writeString(Path.of("../openapi.yaml"), spec); } }\n')
+    test.write_text('def test_writes_the_spec():\n'
+                    '    Path("../openapi.yaml").write_text(spec)\n')
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     band = ('<div class="apiverdict green"><span class="v">Backwards compatible</span></div>'
             '<script>x = "</div>";</script>')
     out = build.api_spec_provenance(band, tmp_path)
     head = out[:out.index("</div>")]
-    assert "Generated from code" in head and "OpenApiExtractorTest.java" in head
+    assert "Generated from code" in head and "test_openapi_spec.py" in head
     assert ">openapi.yaml</a>" in head
     assert out.endswith('<script>x = "</div>";</script>'), "the band's own </div>, not the last"
     assert build.api_spec_provenance("<p>no band</p>", tmp_path) == "<p>no band</p>"
@@ -6880,10 +6669,10 @@ def test_the_api_spec_credit_rides_the_visual_diffs_bar_and_the_version_the_band
     visual diff's bar, projected into its `prov` slot from the shadow host."""
     import subprocess
     (tmp_path / "openapi.yaml").write_text("openapi: 3.0.1\ninfo:\n  title: t\n  version: '1.0'\n")
-    test = tmp_path / "src/test/java/OpenApiExtractorTest.java"
+    test = tmp_path / "tests/test_openapi_spec.py"
     test.parent.mkdir(parents=True)
-    test.write_text('class OpenApiExtractorTest { void gen() {\n'
-                    '  Files.writeString(Path.of("../openapi.yaml"), spec); } }\n')
+    test.write_text('def test_writes_the_spec():\n'
+                    '    Path("../openapi.yaml").write_text(spec)\n')
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     band = ('<div class="apiverdict green"><span class="v">Backwards compatible</span></div>'

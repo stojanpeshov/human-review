@@ -107,11 +107,11 @@ DEFAULT_NAME = "C2-Containers"
 
 # Where the sequence diagrams are, and where they are not. The defaults name the generator's
 # own convention (`<test file>.genseq.puml`, filed beside the test) and then rule out every
-# place a build copies one to: a diagram under `target/` is last week's run, and projecting
+# place a build copies one to: a diagram under `build/` is last week's run, and projecting
 # it would draw a container the branch no longer talks to.
 DEFAULT_SOURCES = ["**/*.genseq.puml"]
 DEFAULT_EXCLUDE = [
-    "**/target/**", "**/build/**", "**/out/**", "**/bin/**",
+    "**/build/**", "**/out/**", "**/bin/**",
     "**/node_modules/**", "**/dist/**", "**/.human-review/**", "**/.git/**",
 ]
 
@@ -178,12 +178,10 @@ DECL = re.compile(
 )
 
 #: A lifeline stereotyped as a library is code linked INTO a container, never a container
-#: of its own: `participant "«module»\nCommons" as Commons` is a jar both JVMs carry, drawn
-#: by the tracing so the Sequence tab can show the call cross a module boundary. On a C2 it
-#: has no box — nobody deploys it, nobody can point at it — and its calls fold into the
-#: container that called into it. The same rule as petclinic's DeploymentDiagramTest
-#: (`LIBRARIES`, `insideOneContainer`), which checks the hand-drawn picture against the
-#: same traces and must agree with this projection about what a container is.
+#: of its own: `participant "«module»\nCommons" as Commons` is a shared library two services
+#: both bundle, drawn by the tracing so the Sequence tab can show the call cross a module
+#: boundary. On a C2 it has no box — nobody deploys it, nobody can point at it — and its
+#: calls fold into the container that called into it.
 LIBRARY_STEREOTYPE = re.compile(r"(?:«|<<)\s*(?:module|library)\s*(?:»|>>)", re.I)
 
 # A message. Two shapes, because both are legal and generated PlantUML uses the first:
@@ -458,7 +456,7 @@ def parse_sequence(text: str, graph: Graph, source: str = "",
         # A library runs inside whichever container called into it, so a call INTO one is
         # a call inside one container — dropped, like a self-call — and a call OUT of one
         # is made by that container. `Commons -> Backend: homeDialCode` (a callback the
-        # jar makes into the JVM that linked it) folds to `Backend -> Backend` and goes.
+        # library makes into the service that bundles it) folds to `Backend -> Backend` and goes.
         # A library nothing has called into yet has no container to stand for: dropped.
         if a in libraries:
             if a not in host:

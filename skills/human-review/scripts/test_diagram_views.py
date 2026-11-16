@@ -965,7 +965,7 @@ def test_the_action_buttons_sit_in_the_card_header(tmp_path):
     (tmp_path / "docs" / "C.drawio.png").write_bytes(b"png")
     out = _widget_with(tmp_path, rerun=RERUN, redraw=REDRAW,
                        drawio_url="drawio:///repo/C.drawio.png", diagram="docs/C.drawio.png",
-                       tested_against="Java Domain Model")
+                       tested_against="SQLAlchemy models")
     head = out[out.index('<div class="head">'):out.index('<div class="rerun">')]
     acts = re.search(r'<div class="rerun-acts">(.*?)</div>', head, re.S).group(1)
     assert "Load changes" not in out and 'data-action="drawio:conceptual"' not in out
@@ -1064,7 +1064,7 @@ def test_the_edit_offer_sits_where_the_caption_sentence_used_to(tmp_path):
     assets = _drawio_set(tmp_path / "assets")
     (assets / "conceptual-diff.json").write_text(json.dumps({
         "added": [], "removed": [], "changed": [], "moved": MOVED, "red": [], "rerun": RERUN,
-        "redraw": REDRAW, "tested_against": "Java Domain Model"}))
+        "redraw": REDRAW, "tested_against": "SQLAlchemy models"}))
     out = build.drawio_widget_html("conceptual", assets, tmp_path, REBUILD)
     assert out.index('class="rerun-acts"') < out.index('class="rerun"') \
         < out.index('class="dgmviews"'), \
@@ -1080,23 +1080,23 @@ REVEAL = {"command": "open -R /repo/docs/C.drawio.png", "in": "the Finder"}
 
 def test_a_named_guardrail_is_the_badge_hover_not_a_line(tmp_path):
     """`tested_against` (from human-review.json, via drawio-diff) used to be a line of its
-    own under the header, "Unit-tested against the Java Domain Model." — a whole row for
+    own under the header, "Unit-tested against the …" — a whole row for
     what the ✓ badge beside the title already claims. It is that badge's hover now, with
     the test's name, and the row is gone (Victor, 20 Oct 2026)."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    test = tmp_path / "src" / "test" / "java" / "ConceptualModelDiagramTest.java"
+    test = tmp_path / "tests" / "test_conceptual_model.py"
     test.parent.mkdir(parents=True)
-    test.write_text('class ConceptualModelDiagramTest { String d = "docs/C.drawio.png"; }')
+    test.write_text('DIAGRAM = "docs/C.drawio.png"\n')
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     out = _widget_with(tmp_path, rerun=RERUN, reveal=REVEAL, diagram="docs/C.drawio.png",
                        drawio_url="drawio:///repo/docs/C.drawio.png",
-                       tested_against="Java Domain Model",
+                       tested_against="SQLAlchemy models",
                        tested_against_path="/repo/src/domain")
     assert "dgm-open" not in out and "Unit-tested against" not in out
     badge = re.search(r'<a class="dgm-prov"[^>]*>', out).group(0)
-    assert ('data-tip="ConceptualModelDiagramTest checks this drawing against the Java '
-            'Domain Model: a mismatch fails the build"') in badge
-    assert "ConceptualModelDiagramTest.java:1:1" in badge
+    assert ('data-tip="test_conceptual_model checks this drawing against the SQLAlchemy '
+            'models: a mismatch fails the build"') in badge
+    assert "test_conceptual_model.py:1:1" in badge
     assert ">Tested vs code</a>" in out, "the face keeps its few words"
     # Declared, and no test names the file: the badge still says so, unlinked.
     lone = _widget_with(tmp_path / "x", rerun=RERUN, diagram="docs/C.drawio.png",
@@ -1441,7 +1441,7 @@ def _unchanged_cards(tmp_path, monkeypatch):
     _svg(assets / "conceptual-new.svg", "whole current picture")
     (assets / "conceptual-diff.json").write_text(json.dumps({
         "added": [], "removed": [], "changed": [], "moved": [], "red": [], "rerun": RERUN,
-        "diagram": "docs/ConceptualModel.drawio.png", "tested_against": "Java Domain Model",
+        "diagram": "docs/ConceptualModel.drawio.png", "tested_against": "SQLAlchemy models",
         "drawio_url": "drawio:///repo/C.drawio.png"}))
     cards["drawio"] = build.drawio_widget_html("conceptual", assets, tmp_path, REBUILD)
     return cards
@@ -1557,20 +1557,16 @@ test('Add a visit',
 test('not tagged', async () => {});
 """
 
-JAVA = """class AddVisitApiTest {
-    @Test
-    void untagged() {
-    }
+API_SPEC = """import {test} from '@playwright/test';
 
-    @GenerateSequence
-    @Test
-    void addsAVisit() throws Exception {
-        call("{x}");
-        if (true) {
-            then("ok");
-        }
-    }
-}
+test('untagged', async () => {});
+
+test('adds a visit',
+  {tag: [GENERATE_SEQUENCE_TAG]},
+  async ({request}) => {
+    await request.post('/api/visits');
+    if (true) { expect(1).toBe(1); }
+  });
 """
 
 
@@ -1579,11 +1575,11 @@ def _tagged_repo(tmp_path):
                                     capture_output=True, text=True)
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     files = {"t/owners.feature": FEATURE, "t/add-visit.spec.ts": SPEC,
-             "b/src/test/java/AddVisitApiTest.java": JAVA}
+             "b/tests/add-visit-api.spec.ts": API_SPEC}
     for rel, text in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(text)
-    # Two of the three tagged scenarios came back as pictures; the Java one did not.
+    # Two of the three tagged scenarios came back as pictures; the API one did not.
     gen = tmp_path / "t" / "generated"
     gen.mkdir()
     (gen / "owners.feature.searching.genseq.puml").write_text(
@@ -1605,7 +1601,7 @@ def test_each_scenario_is_quoted_from_its_tag_to_its_last_line(tmp_path):
     drawn, undrawn = seq.derived_snippets(root)
     assert [x["ref"] for x in drawn] == ["t/add-visit.spec.ts:3-8", "t/owners.feature:6-9"]
     # Tagged, and no picture came back: quoted all the same, for the group that says so.
-    assert [x["ref"] for x in undrawn] == ["b/src/test/java/AddVisitApiTest.java:6-13"]
+    assert [x["ref"] for x in undrawn] == ["b/tests/add-visit-api.spec.ts:5-10"]
 
 
 def test_the_sequence_tab_quotes_what_the_tags_and_the_pictures_say(tmp_path, monkeypatch):
@@ -1624,7 +1620,7 @@ def test_the_sequence_tab_quotes_what_the_tags_and_the_pictures_say(tmp_path, mo
     assert out.count('class="testpair" open') == 2
     assert "Searching shows the first page" in out and "Add a visit" in out
     tail = out[out.index("Tagged for tracing, and no diagram came back"):]
-    assert "AddVisitApiTest.java" in tail
+    assert "add-visit-api.spec.ts" in tail
     assert weight == 3
 
 
@@ -1696,32 +1692,32 @@ def test_a_js_guardrail_that_reads_the_diagram_is_its_tested_badge(tmp_path):
     assert diagrams.diagram_provenance("web/docs/frontend-packages.puml", tmp_path) == ""
 
 
-def test_a_generator_on_maven_s_tree_names_the_command_not_the_poms(tmp_path):
-    """The Maven module graph lost its caption: the chip is what says how it was made.
-    A command is *used*, a source is generated *from*."""
+def test_a_generator_that_parses_the_source_says_it_is_generated_from_code(tmp_path):
+    """A script that walks the Python AST and writes the diagram: *Generated from code*.
+    One that names no source it reads is named itself."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "docs/generated").mkdir(parents=True)
-    (tmp_path / "docs/generated/Modules.puml").write_text("@startuml\n@enduml\n")
+    (tmp_path / "docs/generated/Packages.puml").write_text("@startuml\n@enduml\n")
     script = tmp_path / "gen.py"
-    script.write_text('# Generates Modules.puml from every pom.xml, with mvn dependency:tree\n'
-                      'open("docs/generated/Modules.puml", "w")\n', encoding="utf-8")
+    script.write_text('# Generates Packages.puml\ntree = ast.parse(src)\n'
+                      'open("docs/generated/Packages.puml", "w")\n', encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     diagrams = importlib.import_module("hrbuild.shared.diagrams")
-    out = diagrams.diagram_provenance("docs/generated/Modules.puml", tmp_path)
-    assert ">Generated using `mvn dependency:tree`</a>" in out
-    script.write_text('# Generates Modules.puml from every pom.xml\n'
-                      'open("docs/generated/Modules.puml", "w")\n', encoding="utf-8")
-    assert ">Generated from pom.xml</a>" in diagrams.diagram_provenance(
-        "docs/generated/Modules.puml", tmp_path)
+    out = diagrams.diagram_provenance("docs/generated/Packages.puml", tmp_path)
+    assert ">Generated from code</a>" in out
+    script.write_text('# Generates Packages.puml\n'
+                      'open("docs/generated/Packages.puml", "w")\n', encoding="utf-8")
+    assert ">Generated by gen.py</a>" in diagrams.diagram_provenance(
+        "docs/generated/Packages.puml", tmp_path)
 
 
 def test_a_drawing_tested_vs_traces_says_whose_while_a_generated_one_keeps_the_short_word(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/Deployment.drawio.png").write_bytes(b"png")
-    test = tmp_path / "src/test/java/DeploymentDiagramTest.java"
+    test = tmp_path / "tests/test_deployment_diagram.py"
     test.parent.mkdir(parents=True)
-    test.write_text('class T { String d = "docs/Deployment.drawio.png"; // genseq traces\n}\n',
+    test.write_text('DIAGRAM = "docs/Deployment.drawio.png"  # genseq traces\n',
                     encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     diagrams = importlib.import_module("hrbuild.shared.diagrams")
@@ -1733,9 +1729,9 @@ def test_a_drawing_tested_vs_traces_says_whose_while_a_generated_one_keeps_the_s
 
 def test_a_schema_dumped_from_a_migrated_database_says_it_follows_the_scripts():
     """`Generated from DB schema` hid where the schema comes from: when the generator
-    builds it with Flyway/Liquibase migrations, the badge says the incremental scripts
+    builds it with the Alembic migrations, the badge says the incremental scripts
     (Victor, 20 Oct 2026). A plain dump stays `DB schema`."""
     from hrbuild.shared.diagrams import _prov_source
-    assert _prov_source("Flyway.configure()...; DatabaseMetaData md") == \
+    assert _prov_source("alembic upgrade head; pg_dump --schema-only") == \
         "DB schema built from incremental scripts"
     assert _prov_source("SELECT * FROM information_schema.columns") == "DB schema"

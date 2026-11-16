@@ -82,11 +82,13 @@ def test_a_project_that_says_what_it_generates_replaces_the_defaults():
     assert steps.generated_globs({"generated": "build/**"}) == list(steps.GENERATED_DEFAULT)
 
 
-def test_the_example_config_documents_the_key():
-    """The defaults live in code and the example is where a reader meets them; the two
-    drifting apart is how a config file starts lying about what it does."""
-    cfg = json.loads((HERE.parent / "human-review.example.json").read_text(encoding="utf-8"))
-    assert cfg["generated"] == list(steps.GENERATED_DEFAULT)
+def test_the_config_template_names_only_steps_that_exist():
+    """The template is where a reader meets the config; a step it names that the runner
+    does not know is how a config file starts lying about what it does."""
+    cfg = json.loads((HERE.parent / "human-review.ludvig.json").read_text(encoding="utf-8"))
+    assert all(isinstance(g, str) for g in cfg["generated"])
+    known = {s[0] for s in steps.STEPS}
+    assert set(cfg["steps"]) <= known
 
 
 # --------------------------------------------------------------------------- #

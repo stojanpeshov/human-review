@@ -68,7 +68,7 @@ no fix below claims. So every file you change must be listed in exactly one fix 
       "id": "FIX-1",
       "subject": "let owner admins read the vet list",
       "why": "One paragraph: the finding, and why this change is the fix.",
-      "files": ["petclinic-backend/src/main/java/…/VetRestController.java"]
+      "files": ["src/activities/handlers/activity_handler.py"]
     }
   ]
 }

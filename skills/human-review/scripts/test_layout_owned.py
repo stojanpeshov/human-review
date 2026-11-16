@@ -144,11 +144,11 @@ def test_a_heading_that_only_repeats_the_card_under_it_is_dropped(tmp_path):
     spec, warnings = _own([{"id": "packages", "label": "Structure", "blocks": [
         {"type": "diagrams", "manifest": "assets/c2/MANIFEST.tsv", "only": ["C2-Containers"],
          "id": "c2-containers", "title": "C2 Containers"},
-        {"type": "puml", "src": "docs/MavenModules.puml", "name": "Maven modules",
+        {"type": "puml", "src": "docs/Stacks.puml", "name": "Stacks",
          "title": "How the build is cut"}]}], tmp_path)
-    c2, maven = spec["tabs"][0]["blocks"]
+    c2, stacks = spec["tabs"][0]["blocks"]
     assert "title" not in c2
-    assert maven["title"] == "How the build is cut"
+    assert stacks["title"] == "How the build is cut"
     assert any("C2 Containers" in w for w in warnings)
 
 
@@ -192,8 +192,8 @@ STRUCTURE_TABS = [
     {"id": "data", "label": "Data", "blocks": [
         {"type": "diagrams", "only": ["DomainModel", "DB"]}]},
     {"id": "packages", "label": "Structure", "blocks": [
-        {"type": "puml", "src": "docs/packages.puml", "name": "Java packages"},
-        {"type": "puml", "src": "docs/MavenModules.puml", "name": "Maven modules"},
+        {"type": "puml", "src": "docs/packages.puml", "name": "Python packages"},
+        {"type": "puml", "src": "docs/Stacks.puml", "name": "Stacks"},
         {"type": "diagrams", "manifest": "assets/c2/MANIFEST.tsv", "only": ["C2-Containers"]}]},
 ]
 
@@ -237,7 +237,7 @@ def test_a_context_card_whose_diagram_changed_becomes_its_delta_in_place(tmp_pat
            "source": "docs/packages.puml"}
     tabs, _ = _claim([row], tmp_path, {"docs/packages.puml": "@startuml\n[a]\n@enduml\n"})
     assert tabs["packages"][0] == {"type": "diagrams", "only": ["packages"],
-                                   "labels": {"packages": "Java packages"}}
+                                   "labels": {"packages": "Python packages"}}
     assert len(tabs["packages"]) == 3, "no second card for the same diagram"
 
 
@@ -284,20 +284,20 @@ def test_complexity_stands_right_after_city_whatever_order_the_content_file_wrot
 
 def test_a_diagrams_block_whose_context_changed_shows_its_delta_once(tmp_path):
     """PR #49: `only: ["Frontend packages"]` names the card, not the manifest row, so the
-    changed frontend-packages.puml went unclaimed, joined the Java packages block as a
+    changed frontend-packages.puml went unclaimed, joined the Python packages block as a
     delta, and its own block drew it again underneath as `unchanged`."""
     import importlib
     layout = importlib.import_module("hrbuild.shared.layout")
     (tmp_path / FRONTEND_ROW["source"]).parent.mkdir(parents=True)
     (tmp_path / FRONTEND_ROW["source"]).write_text("@startuml\n[app]\n@enduml\n", encoding="utf-8")
-    java = {"type": "diagrams", "only": ["Java packages"],
-            "context": {"src": "docs/packages.puml", "name": "Java packages"}}
+    java = {"type": "diagrams", "only": ["Python packages"],
+            "context": {"src": "docs/packages.puml", "name": "Python packages"}}
     front = {"type": "diagrams", "only": ["Frontend packages"],
              "context": {"src": FRONTEND_ROW["source"], "name": "Frontend packages"}}
     spec = {"tabs": [{"id": "packages", "blocks": [java, front]}]}
     notes = layout.claim_changed_diagrams(spec, [FRONTEND_ROW], tmp_path)
     blocks = spec["tabs"][0]["blocks"]
-    assert blocks[0]["only"] == ["Java packages"], "not homed on a stranger's block"
+    assert blocks[0]["only"] == ["Python packages"], "not homed on a stranger's block"
     assert blocks[1]["only"] == ["frontend-packages"]
     assert blocks[1]["labels"] == {"frontend-packages": "Frontend packages"}
     assert not notes
@@ -316,9 +316,9 @@ def _claim_tabs(tabs, rows, tmp_path):
 def test_a_context_src_spelled_with_dot_slash_is_the_same_file(tmp_path):
     front = {"type": "diagrams", "only": ["Frontend packages"],
              "context": {"src": "./" + FRONTEND_ROW["source"], "name": "Frontend packages"}}
-    java = {"type": "diagrams", "only": ["Java packages"]}
+    java = {"type": "diagrams", "only": ["Python packages"]}
     tabs, _ = _claim_tabs([{"id": "packages", "blocks": [java, front]}], [FRONTEND_ROW], tmp_path)
-    assert tabs["packages"][0]["only"] == ["Java packages"]
+    assert tabs["packages"][0]["only"] == ["Python packages"]
     assert tabs["packages"][1]["only"] == ["frontend-packages"]
 
 
@@ -344,12 +344,12 @@ def test_two_blocks_naming_one_row_draw_it_once(tmp_path):
     tabs, notes = _claim_tabs([
         {"id": "data", "blocks": [{"type": "diagrams", "only": ["frontend-packages"]}]},
         {"id": "packages", "blocks": [
-            {"type": "diagrams", "only": ["Java packages", "frontend-packages"]},
+            {"type": "diagrams", "only": ["Python packages", "frontend-packages"]},
             {"type": "diagrams", "only": ["Frontend packages"],
              "context": {"src": FRONTEND_ROW["source"], "name": "Frontend packages"}}]}],
         [FRONTEND_ROW], tmp_path)
     assert tabs["data"][0]["only"] == ["frontend-packages"]
-    assert tabs["packages"][0]["only"] == ["Java packages"]
+    assert tabs["packages"][0]["only"] == ["Python packages"]
     assert tabs["packages"][1]["only"] == [] and "context" not in tabs["packages"][1]
     assert len(notes) == 2
 
